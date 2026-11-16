@@ -81,7 +81,7 @@ h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid #0006; flex: none; }
 .palette { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .palette-item { display: flex; align-items: center; gap: 6px; text-align: left; padding: 6px; min-width: 0; }
-.palette-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-item .name { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.2; }
 .palette-item .kind { font-size: 10px; color: var(--muted); }
 .tool-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 8px; }
 .slider { display: grid; grid-template-columns: 80px 1fr 36px; align-items: center; gap: 6px; margin: 4px 0; }

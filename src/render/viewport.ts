@@ -15,7 +15,7 @@ export class Viewport {
   mode: CameraMode = 'free';
   private freeState: { pos: THREE.Vector3; target: THREE.Vector3; fov: number } | null = null;
   private tickers: Array<(t: number, dt: number) => void> = [];
-  private clock = new THREE.Clock();
+  private timer = new THREE.Timer();
   private raycaster = new THREE.Raycaster();
 
   constructor(readonly container: HTMLElement) {
@@ -62,8 +62,9 @@ export class Viewport {
   }
 
   private frame(): void {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
-    const t = this.clock.elapsedTime;
+    this.timer.update();
+    const dt = Math.min(this.timer.getDelta(), 0.1);
+    const t = this.timer.getElapsed();
     for (const fn of this.tickers) fn(t, dt);
     this.controls.update();
     this.renderer.render(this.scene, this.camera);

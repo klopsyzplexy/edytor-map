@@ -6,9 +6,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "start": "npm install --no-audit --no-fund && vite --open",
     "dev": "vite",
+    "prebuild": "npm install --no-audit --no-fund",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --open",
     "test": "vitest run"
   },
   "dependencies": {

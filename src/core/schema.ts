@@ -71,7 +71,7 @@ export interface TerrainLayerDef {
 export interface CameraDef {
   /** Kąt nachylenia od poziomu w stopniach (90 = z góry). */
   pitchDeg: number;
-  /** Obrót wokół osi pionowej w stopniach (0 = patrzy w stronę +Z… tj. „na północ” mapy). */
+  /** Obrót wokół osi pionowej w stopniach (0 = kamera po stronie +Z patrzy w stronę −Z, góra ekranu to mniejsze z). */
   yawDeg: number;
   distance: number;
   fovDeg: number;

@@ -1,7 +1,7 @@
 {
   "name": "edytor-map",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Uniwersalny edytor map 3D w przeglądarce, sterowany plikiem schematu gry.",
   "license": "MIT",
   "type": "module",
@@ -17,6 +17,7 @@
     "three": "0.187.0"
   },
   "devDependencies": {
+    "@types/node": "24.19.2",
     "@types/three": "0.187.0",
     "typescript": "7.0.2",
     "vite": "8.3.8",

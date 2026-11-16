@@ -2,6 +2,11 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.1.1] – 2026-11-17
+
+### Naprawione
+- `npm start` / `npm run dev` zgłaszał błąd „Assets in public directory cannot be imported from JavaScript”: przykłady z `examples/` są teraz udostępniane przez własną wtyczkę Vite (w trybie dev pod tym samym adresem, w buildzie jako pliki), zamiast przez `publicDir`.
+
 ## [0.1.0] – 2026-11-16
 
 Podstawy edytora (zadanie `docs/zadania/0.1/01-podstawy.md`, raport `docs/raporty/0.1.md`).

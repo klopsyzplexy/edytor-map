@@ -1,7 +1,7 @@
 // Panele boczne: paleta obiektów, teren, lista obiektów, właściwości, walidacja.
 import type { Ctx } from '../context';
 import type { MapObject, Vec3 } from '../core/map';
-import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue } from '../core/schema';
+import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import type { HeightTool } from '../core/terrain';
 import { validateMap, type Issue } from '../core/validate';
 import { getLang, t } from '../i18n';
@@ -420,6 +420,7 @@ function propField(ctx: Ctx, p: PropDef, objs: MapObject[], issues: Issue[]): HT
 
 export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], actions: Actions): void {
   const doc = ctx.doc;
+  schemaForIssues = doc.schema;
   rerender(root, () => {
     const sel = doc.selectedObjects();
     if (!sel.length) {
@@ -492,12 +493,31 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
 
 // ---------------- Walidacja ----------------
 
+let schemaForIssues: Schema | null = null;
+
+/** Tekst problemu z walidacji; identyfikatory pól i typów zamienia na nazwy ze schematu. */
 export function issueText(i: Issue): string {
   if (i.message) return L(i.message);
-  return t(`issue.${i.code}`, i.params);
+  const params = { ...i.params };
+  const s = schemaForIssues;
+  if (s) {
+    const typeOf = (id: unknown) => s.objectTypes.find((x) => x.id === id);
+    if (typeof params.type === 'string' && typeOf(params.type)) params.type = L(typeOf(params.type)!.name, params.type);
+    if (i.propId) {
+      for (const ty of s.objectTypes) {
+        const p = ty.properties.find((x) => x.id === i.propId);
+        if (p && (!i.objectType || i.objectType === ty.id)) {
+          params.prop = L(p.name, p.id);
+          break;
+        }
+      }
+    }
+  }
+  return t(`issue.${i.code}`, params);
 }
 
 export function renderValidation(root: HTMLElement, ctx: Ctx, issues: Issue[], header: HTMLElement): void {
+  schemaForIssues = ctx.doc.schema;
   const errors = issues.filter((i) => i.level === 'error').length;
   const warnings = issues.length - errors;
   header.textContent = t('validation.summary', { e: errors, w: warnings });

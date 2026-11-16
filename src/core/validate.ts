@@ -30,6 +30,8 @@ export interface Issue {
   /** Drugi obiekt (np. przy zasadzie odległości). */
   otherId?: string;
   propId?: string;
+  /** Typ obiektu, którego dotyczy pole `propId`. */
+  objectType?: string;
   params: Record<string, string | number>;
   /** Własny komunikat z zasady schematu. */
   message?: LocText;
@@ -58,7 +60,7 @@ export function validateMap(schema: Schema, map: MapData): Issue[] {
 
     for (const p of t.properties) {
       const v = o.props[p.id];
-      const pb = { ...base, propId: p.id, params: { name: o.name, prop: p.id } };
+      const pb = { ...base, propId: p.id, objectType: o.type, params: { name: o.name, prop: p.id } };
       const empty = v === undefined || v === null || v === '';
       if (empty) {
         if (p.required) issues.push({ ...pb, level: 'error', code: 'propRequired' });

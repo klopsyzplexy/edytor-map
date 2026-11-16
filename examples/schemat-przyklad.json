@@ -1,128 +1,476 @@
 {
   "schemaVersion": 1,
   "id": "przyklad",
-  "name": { "pl": "Przykładowy schemat", "en": "Example schema" },
+  "name": {
+    "pl": "Przykładowy schemat",
+    "en": "Example schema"
+  },
   "version": "1.0",
   "units": "m",
-  "camera": { "pitchDeg": 55, "yawDeg": 0, "distance": 40, "fovDeg": 45 },
-  "mapDefaults": { "size": [64, 64], "resolution": 129, "height": 0, "waterLevel": 0.4, "slopeMaxDeg": 40 },
+  "camera": {
+    "pitchDeg": 55,
+    "yawDeg": 0,
+    "distance": 40,
+    "fovDeg": 45
+  },
+  "mapDefaults": {
+    "size": [
+      64,
+      64
+    ],
+    "resolution": 129,
+    "height": 0,
+    "waterLevel": 0.4,
+    "slopeMaxDeg": 40
+  },
   "terrainLayers": [
-    { "id": "trawa", "name": { "pl": "Trawa", "en": "Grass" }, "color": "#5f9e4a" },
-    { "id": "piasek", "name": { "pl": "Piasek", "en": "Sand" }, "color": "#d8c48a" },
-    { "id": "skala", "name": { "pl": "Skała", "en": "Rock" }, "color": "#8a8580" },
-    { "id": "droga", "name": { "pl": "Droga", "en": "Road" }, "color": "#9c7a52" },
-    { "id": "woda", "name": { "pl": "Woda", "en": "Water" }, "color": "#2f6f9e", "water": true }
+    {
+      "id": "trawa",
+      "name": {
+        "pl": "Trawa",
+        "en": "Grass"
+      },
+      "color": "#5f9e4a"
+    },
+    {
+      "id": "piasek",
+      "name": {
+        "pl": "Piasek",
+        "en": "Sand"
+      },
+      "color": "#d8c48a"
+    },
+    {
+      "id": "skala",
+      "name": {
+        "pl": "Skała",
+        "en": "Rock"
+      },
+      "color": "#8a8580"
+    },
+    {
+      "id": "droga",
+      "name": {
+        "pl": "Droga",
+        "en": "Road"
+      },
+      "color": "#9c7a52"
+    },
+    {
+      "id": "woda",
+      "name": {
+        "pl": "Woda",
+        "en": "Water"
+      },
+      "color": "#2f6f9e",
+      "water": true
+    }
   ],
   "objectTypes": [
     {
       "id": "start",
-      "name": { "pl": "Start gracza", "en": "Player start" },
-      "category": { "pl": "Rozgrywka", "en": "Gameplay" },
+      "name": {
+        "pl": "Start gracza",
+        "en": "Player start"
+      },
+      "category": {
+        "pl": "Rozgrywka",
+        "en": "Gameplay"
+      },
       "kind": "point",
-      "look": { "shape": "cylinder", "color": "#3ddc84" },
-      "defaultSize": [1, 0.3, 1],
-      "flags": { "collision": false, "visibleInGame": false, "walkable": false },
-      "hint": { "pl": "Miejsce, w którym pojawia się gracz.", "en": "Where the player spawns." },
+      "look": {
+        "shape": "cylinder",
+        "color": "#3ddc84"
+      },
+      "defaultSize": [
+        1,
+        0.3,
+        1
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": false,
+        "walkable": false
+      },
+      "hint": {
+        "pl": "Miejsce, w którym pojawia się gracz.",
+        "en": "Where the player spawns."
+      },
       "properties": []
     },
     {
       "id": "generator",
-      "name": { "pl": "Generator", "en": "Spawner" },
-      "category": { "pl": "Rozgrywka", "en": "Gameplay" },
+      "name": {
+        "pl": "Generator",
+        "en": "Spawner"
+      },
+      "category": {
+        "pl": "Rozgrywka",
+        "en": "Gameplay"
+      },
       "kind": "point",
-      "look": { "shape": "box", "color": "#e0623a" },
-      "defaultSize": [1.5, 1, 1.5],
-      "flags": { "collision": true, "visibleInGame": true, "walkable": false },
+      "look": {
+        "shape": "box",
+        "color": "#e0623a"
+      },
+      "defaultSize": [
+        1.5,
+        1,
+        1.5
+      ],
+      "flags": {
+        "collision": true,
+        "visibleInGame": true,
+        "walkable": false
+      },
       "properties": [
-        { "id": "nazwa", "name": { "pl": "Nazwa", "en": "Name" }, "type": "text", "default": "", "required": true },
-        { "id": "liczba", "name": { "pl": "Liczba stworzeń", "en": "Creature count" }, "type": "number", "default": 3, "min": 1, "max": 10, "step": 1 },
+        {
+          "id": "nazwa",
+          "name": {
+            "pl": "Nazwa",
+            "en": "Name"
+          },
+          "type": "text",
+          "default": "",
+          "required": true
+        },
+        {
+          "id": "liczba",
+          "name": {
+            "pl": "Liczba stworzeń",
+            "en": "Creature count"
+          },
+          "type": "number",
+          "default": 3,
+          "min": 1,
+          "max": 10,
+          "step": 1
+        },
         {
           "id": "rodzaj",
-          "name": { "pl": "Rodzaj", "en": "Kind" },
+          "name": {
+            "pl": "Rodzaj",
+            "en": "Kind"
+          },
           "type": "enum",
           "default": "zwykly",
           "options": [
-            { "value": "zwykly", "name": { "pl": "Zwykły", "en": "Common" } },
-            { "value": "rzadki", "name": { "pl": "Rzadki", "en": "Rare" } },
-            { "value": "boss", "name": { "pl": "Boss", "en": "Boss" } }
+            {
+              "value": "zwykly",
+              "name": {
+                "pl": "Zwykły",
+                "en": "Common"
+              }
+            },
+            {
+              "value": "rzadki",
+              "name": {
+                "pl": "Rzadki",
+                "en": "Rare"
+              }
+            },
+            {
+              "value": "boss",
+              "name": {
+                "pl": "Boss",
+                "en": "Boss"
+              }
+            }
           ]
         },
-        { "id": "aktywny", "name": { "pl": "Aktywny", "en": "Active" }, "type": "bool", "default": true },
-        { "id": "kolor", "name": { "pl": "Kolor znacznika", "en": "Marker color" }, "type": "color", "default": "#ffcc00" },
-        { "id": "obszar", "name": { "pl": "Obszar", "en": "Area" }, "type": "ref", "default": null, "refTypes": ["obszar"], "hint": { "pl": "Strefa, w której krążą stworzenia.", "en": "Zone where creatures roam." } }
+        {
+          "id": "aktywny",
+          "name": {
+            "pl": "Aktywny",
+            "en": "Active"
+          },
+          "type": "bool",
+          "default": true
+        },
+        {
+          "id": "kolor",
+          "name": {
+            "pl": "Kolor znacznika",
+            "en": "Marker color"
+          },
+          "type": "color",
+          "default": "#ffcc00"
+        },
+        {
+          "id": "obszar",
+          "name": {
+            "pl": "Obszar",
+            "en": "Area"
+          },
+          "type": "ref",
+          "default": null,
+          "refTypes": [
+            "obszar"
+          ],
+          "hint": {
+            "pl": "Strefa, w której krążą stworzenia.",
+            "en": "Zone where creatures roam."
+          }
+        }
       ]
     },
     {
       "id": "drzewo",
-      "name": { "pl": "Drzewo", "en": "Tree" },
-      "category": { "pl": "Dekoracje", "en": "Decorations" },
+      "name": {
+        "pl": "Drzewo",
+        "en": "Tree"
+      },
+      "category": {
+        "pl": "Dekoracje",
+        "en": "Decorations"
+      },
       "kind": "point",
-      "look": { "shape": "cone", "color": "#2e6b2f" },
-      "defaultSize": [1.6, 3, 1.6],
-      "flags": { "collision": true, "visibleInGame": true, "walkable": false },
+      "look": {
+        "shape": "cone",
+        "color": "#2e6b2f"
+      },
+      "defaultSize": [
+        1.6,
+        3,
+        1.6
+      ],
+      "flags": {
+        "collision": true,
+        "visibleInGame": true,
+        "walkable": false
+      },
       "properties": []
     },
     {
       "id": "kamien",
-      "name": { "pl": "Kamień", "en": "Rock" },
-      "category": { "pl": "Dekoracje", "en": "Decorations" },
+      "name": {
+        "pl": "Kamień",
+        "en": "Rock"
+      },
+      "category": {
+        "pl": "Dekoracje",
+        "en": "Decorations"
+      },
       "kind": "point",
-      "look": { "shape": "sphere", "color": "#77736d" },
-      "defaultSize": [1.2, 0.9, 1.2],
-      "flags": { "collision": true, "visibleInGame": true, "walkable": false },
+      "look": {
+        "shape": "sphere",
+        "color": "#77736d"
+      },
+      "defaultSize": [
+        1.2,
+        0.9,
+        1.2
+      ],
+      "flags": {
+        "collision": true,
+        "visibleInGame": true,
+        "walkable": false
+      },
       "properties": []
     },
     {
       "id": "sciana",
-      "name": { "pl": "Ściana kolizji", "en": "Collision wall" },
-      "category": { "pl": "Kolizje", "en": "Collision" },
+      "name": {
+        "pl": "Ściana kolizji",
+        "en": "Collision wall"
+      },
+      "category": {
+        "pl": "Kolizje",
+        "en": "Collision"
+      },
       "kind": "solid",
-      "look": { "shape": "box", "color": "#d0306a" },
-      "defaultSize": [4, 2, 0.5],
-      "flags": { "collision": true, "visibleInGame": false, "walkable": false },
-      "hint": { "pl": "Niewidzialna w grze bryła, która blokuje ruch.", "en": "Invisible in game, blocks movement." },
+      "look": {
+        "shape": "box",
+        "color": "#d0306a"
+      },
+      "defaultSize": [
+        4,
+        2,
+        0.5
+      ],
+      "flags": {
+        "collision": true,
+        "visibleInGame": false,
+        "walkable": false
+      },
+      "hint": {
+        "pl": "Niewidzialna w grze bryła, która blokuje ruch.",
+        "en": "Invisible in game, blocks movement."
+      },
       "properties": []
     },
     {
       "id": "most",
-      "name": { "pl": "Most", "en": "Bridge" },
-      "category": { "pl": "Budowle", "en": "Structures" },
+      "name": {
+        "pl": "Most",
+        "en": "Bridge"
+      },
+      "category": {
+        "pl": "Budowle",
+        "en": "Structures"
+      },
       "kind": "solid",
-      "look": { "shape": "box", "color": "#8b5a2b" },
-      "defaultSize": [3, 0.3, 8],
-      "flags": { "collision": false, "visibleInGame": true, "walkable": true },
-      "hint": { "pl": "Gracz chodzi po górnej powierzchni.", "en": "The player walks on its top surface." },
+      "look": {
+        "shape": "box",
+        "color": "#8b5a2b"
+      },
+      "defaultSize": [
+        3,
+        0.3,
+        8
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": true,
+        "walkable": true
+      },
+      "hint": {
+        "pl": "Gracz chodzi po górnej powierzchni.",
+        "en": "The player walks on its top surface."
+      },
+      "properties": []
+    },
+    {
+      "id": "kladka",
+      "name": {
+        "pl": "Kładka (model)",
+        "en": "Footbridge (model)"
+      },
+      "category": {
+        "pl": "Budowle",
+        "en": "Structures"
+      },
+      "kind": "solid",
+      "look": {
+        "shape": "box",
+        "color": "#8b5a2b",
+        "model": "modele/kladka.glb"
+      },
+      "defaultSize": [
+        2.2,
+        1.9,
+        7
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": true,
+        "walkable": true
+      },
+      "hint": {
+        "pl": "Przykład modelu .glb; po siatce „walkable_deck” można chodzić.",
+        "en": "Example .glb model; the “walkable_deck” mesh is walkable."
+      },
       "properties": []
     },
     {
       "id": "trasa",
-      "name": { "pl": "Trasa wozu", "en": "Cart route" },
-      "category": { "pl": "Ścieżki i strefy", "en": "Paths and zones" },
+      "name": {
+        "pl": "Trasa wozu",
+        "en": "Cart route"
+      },
+      "category": {
+        "pl": "Ścieżki i strefy",
+        "en": "Paths and zones"
+      },
       "kind": "path",
-      "look": { "shape": "box", "color": "#f2c230" },
-      "defaultSize": [1, 1, 1],
-      "flags": { "collision": false, "visibleInGame": false, "walkable": false },
+      "look": {
+        "shape": "box",
+        "color": "#f2c230"
+      },
+      "defaultSize": [
+        1,
+        1,
+        1
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": false,
+        "walkable": false
+      },
       "properties": [
-        { "id": "predkosc", "name": { "pl": "Prędkość", "en": "Speed" }, "type": "number", "default": 2, "min": 0.1, "max": 20 },
-        { "id": "petla", "name": { "pl": "Zapętlona", "en": "Looped" }, "type": "bool", "default": false }
+        {
+          "id": "predkosc",
+          "name": {
+            "pl": "Prędkość",
+            "en": "Speed"
+          },
+          "type": "number",
+          "default": 2,
+          "min": 0.1,
+          "max": 20
+        },
+        {
+          "id": "petla",
+          "name": {
+            "pl": "Zapętlona",
+            "en": "Looped"
+          },
+          "type": "bool",
+          "default": false
+        }
       ]
     },
     {
       "id": "obszar",
-      "name": { "pl": "Obszar", "en": "Area" },
-      "category": { "pl": "Ścieżki i strefy", "en": "Paths and zones" },
+      "name": {
+        "pl": "Obszar",
+        "en": "Area"
+      },
+      "category": {
+        "pl": "Ścieżki i strefy",
+        "en": "Paths and zones"
+      },
       "kind": "zone",
-      "look": { "shape": "box", "color": "#4aa8ff" },
-      "defaultSize": [1, 1, 1],
-      "flags": { "collision": false, "visibleInGame": false, "walkable": false },
+      "look": {
+        "shape": "box",
+        "color": "#4aa8ff"
+      },
+      "defaultSize": [
+        1,
+        1,
+        1
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": false,
+        "walkable": false
+      },
       "properties": [
-        { "id": "nazwa", "name": { "pl": "Nazwa", "en": "Name" }, "type": "text", "default": "" }
+        {
+          "id": "nazwa",
+          "name": {
+            "pl": "Nazwa",
+            "en": "Name"
+          },
+          "type": "text",
+          "default": ""
+        }
       ]
     }
   ],
   "rules": [
-    { "type": "count", "objectType": "start", "min": 1, "max": 1, "level": "error", "message": { "pl": "Mapa musi mieć dokładnie jeden start gracza.", "en": "The map needs exactly one player start." } },
-    { "type": "count", "objectType": "generator", "min": 1, "level": "warning" },
-    { "type": "minDistance", "objectType": "generator", "distance": 6, "level": "warning" }
+    {
+      "type": "count",
+      "objectType": "start",
+      "min": 1,
+      "max": 1,
+      "level": "error",
+      "message": {
+        "pl": "Mapa musi mieć dokładnie jeden start gracza.",
+        "en": "The map needs exactly one player start."
+      }
+    },
+    {
+      "type": "count",
+      "objectType": "generator",
+      "min": 1,
+      "level": "warning"
+    },
+    {
+      "type": "minDistance",
+      "objectType": "generator",
+      "distance": 6,
+      "level": "warning"
+    }
   ]
 }

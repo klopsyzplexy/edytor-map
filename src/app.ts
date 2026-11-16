@@ -262,7 +262,7 @@ export class App implements Ctx {
   private bindKeys(): void {
     window.addEventListener('keydown', (e) => {
       if (document.querySelector('.modal-overlay')) return;
-      const target = e.target as HTMLElement;
+      const target = e.target instanceof HTMLElement ? e.target : document.body;
       const typing = target.matches('input:not([type=checkbox]):not([type=range]), textarea, select');
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();

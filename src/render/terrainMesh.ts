@@ -120,9 +120,9 @@ const waterFragment = /* glsl */ `
     amount /= max(total, 0.001);
     float a = smoothstep(0.25, 0.55, amount);
     if (a < 0.01) discard;
-    float waves = sin(vWorld.x * 2.3 + uTime * 2.0) * sin(vWorld.z * 1.9 - uTime * 1.7);
-    float sparkle = smoothstep(0.75, 1.0, waves);
-    col = mix(col * 1.15, vec3(0.85, 0.95, 1.0), sparkle * 0.35);
+    float waves = 0.5 * sin(vWorld.x * 1.3 + vWorld.z * 0.7 + uTime * 1.8) + 0.5 * sin(vWorld.z * 1.7 - vWorld.x * 0.4 - uTime * 1.3);
+    col *= 1.05 + waves * 0.1;
+    col = mix(col, vec3(0.82, 0.93, 1.0), smoothstep(0.55, 1.0, waves) * 0.3);
     gl_FragColor = vec4(col, a * 0.78);
     #include <colorspace_fragment>
   }`;

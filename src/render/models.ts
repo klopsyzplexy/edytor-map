@@ -89,8 +89,9 @@ export class ModelLibrary {
         a.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld);
         b.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld);
         c.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
-        n.subVectors(c, b).cross(new THREE.Vector3().subVectors(a, b)).normalize();
-        if (!useAll && n.y < 0.7) continue;
+        n.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a)).normalize();
+        // z siatki „walkable” bierzemy ściany skierowane choć trochę do góry, z całego modelu – tylko prawie poziome
+        if (n.y < (useAll ? 0.1 : 0.7)) continue;
         out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
       }
     }

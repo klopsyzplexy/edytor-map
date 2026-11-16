@@ -2,7 +2,11 @@
 import * as THREE from 'three';
 import { cellSize, type MapData } from '../core/map';
 import { MAX_TERRAIN_LAYERS, type Schema } from '../core/schema';
-import { slopeAt, type Rect } from '../core/terrain';
+import { slopeAt, type BrushShape, type HeightStamp, type Rect } from '../core/terrain';
+
+/** Kształt kursora pędzla: kształty pędzli i stempel (kwadrat z podglądem obrazu). */
+export type CursorShape = BrushShape | 'stamp';
+const SHAPE_ID: Record<CursorShape, number> = { circle: 0, square: 1, diamond: 2, stamp: 3 };
 
 const N = MAX_TERRAIN_LAYERS;
 
@@ -42,6 +46,9 @@ const terrainFragment = /* glsl */ `
   uniform float uSlopeOn;
   uniform vec4 uBrush; // x, z, promień, widoczność
   uniform vec3 uBrushColor;
+  uniform vec3 uBrushShape; // kształt (0 koło, 1 kwadrat, 2 romb, 3 stempel), obrót w radianach, promień wewnętrzny (0–1)
+  uniform sampler2D uStamp;
+  uniform float uStampMid;
   uniform float uGridStep;
   uniform vec2 uSize;
   varying vec3 vWorld;
@@ -71,11 +78,25 @@ const terrainFragment = /* glsl */ `
     vec2 e = min(vWorld.xz, uSize - vWorld.xz) / fwidth(vWorld.xz);
     col = mix(col, vec3(1.0, 0.9, 0.3), (1.0 - min(min(e.x, e.y) / 2.0, 1.0)) * 0.8);
     if (uBrush.w > 0.5) {
-      float d = distance(vWorld.xz, uBrush.xy);
+      // ta sama konwencja obrotu co brushLocal() w core/terrain.ts
+      vec2 dl = vWorld.xz - uBrush.xy;
+      float ca = cos(uBrushShape.y);
+      float sa = sin(uBrushShape.y);
+      vec2 p = vec2(dl.x * ca + dl.y * sa, -dl.x * sa + dl.y * ca);
+      float shape = uBrushShape.x;
+      float d = shape < 0.5 ? length(p) : shape < 1.5 || shape > 2.5 ? max(abs(p.x), abs(p.y)) : abs(p.x) + abs(p.y);
       float fw = fwidth(d) * 1.5;
       float ring = 1.0 - smoothstep(0.0, fw, abs(d - uBrush.z));
-      float inner = 1.0 - smoothstep(0.0, fw, abs(d - uBrush.z * 0.5));
+      float inner = shape > 2.5 ? 0.0 : 1.0 - smoothstep(0.0, fw, abs(d - uBrush.z * max(uBrushShape.z, 0.02)));
       col = mix(col, uBrushColor, max(ring, inner * 0.35));
+      if (shape > 2.5 && d < uBrush.z) {
+        // podgląd stempla: jasne – podniesie, ciemne (przy 50% = zero) – obniży
+        float v = texture2D(uStamp, p / (2.0 * uBrush.z) + 0.5).r;
+        float signedV = uStampMid > 0.5 ? v * 2.0 - 1.0 : v;
+        col = mix(col, signedV >= 0.0 ? vec3(1.0, 0.95, 0.7) : vec3(0.3, 0.55, 1.0), min(abs(signedV), 1.0) * 0.6);
+        // strzałka kierunku „góra obrazu”
+        if (abs(p.x) < fw * 1.2 && p.y < 0.0 && p.y > -uBrush.z) col = mix(col, uBrushColor, 0.6);
+      }
     }
     gl_FragColor = vec4(col, 1.0);
     #include <colorspace_fragment>
@@ -205,6 +226,9 @@ export class TerrainMesh {
       uSlopeOn: { value: 0 },
       uBrush: { value: new THREE.Vector4(0, 0, 1, 0) },
       uBrushColor: { value: new THREE.Color(1, 1, 1) },
+      uBrushShape: { value: new THREE.Vector3(0, 0, 0.5) },
+      uStamp: { value: null },
+      uStampMid: { value: 0 },
       uGridStep: { value: 0 },
       uSize: { value: new THREE.Vector2(...map.settings.size) },
     };
@@ -333,6 +357,31 @@ export class TerrainMesh {
     (this.material.uniforms.uBrushColor.value as THREE.Color).set(color);
   }
 
+  /** Kształt kursora pędzla: kształt, obrót w stopniach i miękkość (wewnętrzny okrąg). */
+  setBrushShape(shape: CursorShape, angleDeg: number, softness: number): void {
+    (this.material.uniforms.uBrushShape.value as THREE.Vector3).set(SHAPE_ID[shape], (angleDeg * Math.PI) / 180, 1 - softness);
+  }
+
+  private stampTex: THREE.DataTexture | null = null;
+  private stampSrc: HeightStamp | null = null;
+
+  /** Obraz stempla do podglądu pod kursorem. */
+  setStamp(st: HeightStamp | null, midZero: boolean): void {
+    this.material.uniforms.uStampMid.value = midZero ? 1 : 0;
+    if (st === this.stampSrc) return;
+    this.stampSrc = st;
+    this.stampTex?.dispose();
+    this.stampTex = null;
+    if (st) {
+      const bytes = new Uint8Array(st.w * st.h);
+      for (let k = 0; k < bytes.length; k++) bytes[k] = Math.round(st.data[k] * 255);
+      this.stampTex = new THREE.DataTexture(bytes, st.w, st.h, THREE.RedFormat, THREE.UnsignedByteType);
+      this.stampTex.magFilter = this.stampTex.minFilter = THREE.LinearFilter;
+      this.stampTex.needsUpdate = true;
+    }
+    this.material.uniforms.uStamp.value = this.stampTex;
+  }
+
   setGrid(step: number): void {
     this.material.uniforms.uGridStep.value = step;
   }
@@ -349,5 +398,6 @@ export class TerrainMesh {
     this.weightsA.dispose();
     this.weightsB.dispose();
     this.blocked.dispose();
+    this.stampTex?.dispose();
   }
 }

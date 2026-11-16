@@ -180,6 +180,7 @@ export class Viewport {
   rayFromEvent(e: { clientX: number; clientY: number }): THREE.Ray {
     const r = this.renderer.domElement.getBoundingClientRect();
     const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(ndc, this.camera);
     return this.raycaster.ray.clone();
   }

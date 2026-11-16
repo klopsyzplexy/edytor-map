@@ -63,6 +63,8 @@ Klawisz **F1** (albo **?**) pokazuje wszystkie skróty.
 3. Przytrzymaj lewy przycisk i maluj po terenie:
    - **Shift** odwraca podnoszenie i obniżanie;
    - **Ctrl + klik** pobiera wysokość dla pędzla „Wyrównaj”.
+   - **Kształt pędzla:** koło, kwadrat albo romb. Kwadrat i romb można obracać (klawisze `,` i `.` albo suwak „Obrót”). Kształt widać na terenie pod kursorem. Siłę zmienia **Shift + `[` / `]`**.
+   - **Stempel z obrazu** (klawisz **T**): wybierz obraz (Góra, Płaskowyż, Krater, Wąwóz) albo wgraj własny szary obraz i kliknij teren. Jasne miejsca podnoszą teren o ustawioną „Wysokość”. Przy opcji „Szary 50% = bez zmian” ciemne miejsca obniżają teren (tak działają Krater i Wąwóz). Shift + klik odbija stempel odwrotnie, a przeciąganie odbija kolejne co rozmiar pędzla. Pod kursorem widać podgląd: jasne podniesie, niebieskie obniży, a kreska pokazuje górę obrazu.
 4. **Warstwy:** kliknij warstwę (np. Piasek, Woda) i maluj (klawisz **P**). Pierwsza warstwa to podłoże, więc malowanie nią działa jak gumka (to samo robi Shift). Woda faluje w podglądzie. Jej poziom ustawisz w polu „Poziom wody”.
 5. **Strome zbocza:** zaznacz „Oznacz zbyt strome zbocza jako nieprzechodnie” i ustaw próg w stopniach. Zbyt strome miejsca zrobią się czerwone, a przy zapisie trafią do maski nieprzechodniości.
 
@@ -150,4 +152,4 @@ Edytor wczytuje cztery formaty, ale każdy model od razu zamienia na **.glb**. D
   - `storage/` – zapis roboczy i pliki;
   - `i18n/` – tłumaczenia.
 - Zasady projektu: [CLAUDE.md](CLAUDE.md). Zmiany: [CHANGELOG.md](CHANGELOG.md).
-- `node tools/make-example-glb.mjs` odtwarza przykładowy model `examples/modele/kladka.glb`.
+- `node tools/make-example-glb.mjs` odtwarza przykładowy model `examples/modele/kladka.glb`, a `node tools/make-example-stamps.mjs` – przykładowe stemple `examples/stemple/*.png`.

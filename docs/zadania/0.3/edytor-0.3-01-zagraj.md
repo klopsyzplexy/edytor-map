@@ -30,7 +30,19 @@ Warstwy terenu dostają właściwość **przechodnia** (np. głęboka woda: nie)
 - Mały panel: pozycja postaci, wysokość terenu, nachylenie pod postacią, liczba klatek na sekundę.
 - Przeciwnicy i inne obiekty stoją jako modele (bez zachowań).
 
+## Biblioteka modeli (dodatkowo w tej wersji)
+
+Dziś model można przypisać tylko w schemacie do typu obiektu. Potrzebne:
+- **panel Biblioteka:** wszystkie wczytane modele z miniaturami, wyszukiwaniem i folderami; wgrywanie przez przeciągnięcie plików do okna;
+- **dekoracje:** dowolny model z biblioteki można przeciągnąć na mapę jako obiekt dekoracyjny (bez logiki gry, z flagami kolizja i chodliwy do ustawienia przy obiekcie); wbudowany, uniwersalny typ „dekoracja”, niezależny od schematu;
+- **przypisanie modelu do typu ze schematu z poziomu interfejsu** (bez edycji pliku JSON): wybór modelu, skala, obrót i przesunięcie względem punktu obiektu; zmiana zapisuje się w schemacie;
+- **„Użyj jako…”** przy modelu w bibliotece: wybór roli – model postaci gracza (sekcja gracz w schemacie) albo dowolny typ ze schematu (np. generator, boss, budynek); model przy typie ma oznaczenie roli w bibliotece;
+- **„Zmień typ”** przy obiekcie na mapie: dekoracja może stać się obiektem typu ze schematu (i odwrotnie), z zachowaniem modelu, pozycji, obrotu i skali; panel pokazuje wtedy właściwości wybranego typu;
+- biblioteka zapisuje się razem z projektem; eksport mapy zawiera odwołania do modeli i spakowane modele (opisz wybór w dokumentacji).
+
 ## Kryteria odbioru
+
+- Wczytany model widać w bibliotece; można go postawić na mapie jako dekorację i przypisać do typu obiektu bez edycji pliku.
 
 - Tryb gry startuje z obiektu startowego i spod kursora, Esc wraca do edytora bez zmian w mapie.
 - Postać nie przechodzi przez żaden rodzaj kolizji ani strome zbocza, chodzi po mostach i innych powierzchniach chodliwych, ślizga się wzdłuż ścian.

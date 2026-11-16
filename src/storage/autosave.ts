@@ -8,6 +8,8 @@ export interface AutosaveData {
   mapJson: string;
   savedAt: number;
   models: Record<string, ArrayBuffer>;
+  /** Własne stemple wysokości (nazwa pliku → obraz). */
+  stamps?: Record<string, ArrayBuffer>;
   fileName?: string;
 }
 

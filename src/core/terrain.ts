@@ -2,10 +2,16 @@
 import { cellSize, heightAt, type MapData, type Vec3 } from './map';
 
 export type HeightTool = 'raise' | 'lower' | 'smooth' | 'flatten' | 'noise';
+export type BrushShape = 'circle' | 'square' | 'diamond';
+export const BRUSH_SHAPES: BrushShape[] = ['circle', 'square', 'diamond'];
 
 export interface Brush {
-  /** Promień w jednostkach mapy. */
+  /** Promień w jednostkach mapy (dla kwadratu – połowa boku, dla rombu – połowa przekątnej). */
   radius: number;
+  /** Kształt pędzla (domyślnie koło). */
+  shape?: BrushShape;
+  /** Obrót kształtu w stopniach (kwadrat, romb, stempel). */
+  angle?: number;
   /** Siła 0–1. */
   strength: number;
   /** Miękkość krawędzi 0–1 (0 = twarda krawędź, 1 = łagodnie od środka). */
@@ -36,19 +42,44 @@ export function brushWeight(d: number, r: number, softness: number): number {
   return 1 - t * t * (3 - 2 * t);
 }
 
+/**
+ * Przesunięcie od środka pędzla w układzie obróconego pędzla. Obrót o `angle` stopni
+ * (patrząc z góry, od osi +X w stronę +Z). Ta sama konwencja jest w shaderze kursora.
+ */
+export function brushLocal(dx: number, dz: number, angleDeg = 0): [number, number] {
+  if (!angleDeg) return [dx, dz];
+  const a = (angleDeg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [dx * c + dz * s, -dx * s + dz * c];
+}
+
+/** „Odległość” od środka w normie kształtu: koło – euklidesowa, kwadrat – maksimum, romb – suma. */
+export function shapeDistance(dx: number, dz: number, shape: BrushShape = 'circle', angleDeg = 0): number {
+  if (shape === 'circle') return Math.hypot(dx, dz);
+  const [x, z] = brushLocal(dx, dz, angleDeg);
+  return shape === 'square' ? Math.max(Math.abs(x), Math.abs(z)) : Math.abs(x) + Math.abs(z);
+}
+
+/** Zasięg pędzla w osiach mapy (obrócony kwadrat wystaje poza promień). */
+function reach(b: Brush): number {
+  return b.shape === 'square' && b.angle ? b.radius * Math.SQRT2 : b.radius;
+}
+
 /** Wierzchołki w zasięgu pędzla wraz z wagą. */
 function forEachInBrush(map: MapData, cx: number, cz: number, b: Brush, fn: (idx: number, w: number, i: number, j: number) => void): Rect | null {
   const { nx, nz } = map.terrain;
   const [sx, sz] = cellSize(map);
-  const i0 = Math.max(0, Math.floor((cx - b.radius) / sx));
-  const i1 = Math.min(nx - 1, Math.ceil((cx + b.radius) / sx));
-  const j0 = Math.max(0, Math.floor((cz - b.radius) / sz));
-  const j1 = Math.min(nz - 1, Math.ceil((cz + b.radius) / sz));
+  const r = reach(b);
+  const i0 = Math.max(0, Math.floor((cx - r) / sx));
+  const i1 = Math.min(nx - 1, Math.ceil((cx + r) / sx));
+  const j0 = Math.max(0, Math.floor((cz - r) / sz));
+  const j1 = Math.min(nz - 1, Math.ceil((cz + r) / sz));
   if (i0 > i1 || j0 > j1) return null;
   let any = false;
   for (let j = j0; j <= j1; j++)
     for (let i = i0; i <= i1; i++) {
-      const w = brushWeight(Math.hypot(i * sx - cx, j * sz - cz), b.radius, b.softness);
+      const w = brushWeight(shapeDistance(i * sx - cx, j * sz - cz, b.shape, b.angle), b.radius, b.softness);
       if (w > 0) {
         any = true;
         fn(j * nx + i, w, i, j);
@@ -117,6 +148,57 @@ export function applyHeightBrush(map: MapData, tool: HeightTool, cx: number, cz:
       }
     }
   });
+}
+
+/** Stempel wysokości: szary obraz (0–1), wiersz 0 to góra obrazu (mniejsze z). */
+export interface HeightStamp {
+  w: number;
+  h: number;
+  data: Float32Array;
+}
+
+/** Wartość stempla w punkcie (u, v) ∈ [0, 1]² – interpolacja dwuliniowa. */
+export function sampleStamp(st: HeightStamp, u: number, v: number): number {
+  const fx = Math.min(Math.max(u * (st.w - 1), 0), st.w - 1);
+  const fy = Math.min(Math.max(v * (st.h - 1), 0), st.h - 1);
+  const x = Math.min(Math.floor(fx), st.w - 2);
+  const y = Math.min(Math.floor(fy), st.h - 2);
+  const tx = fx - x;
+  const ty = fy - y;
+  const d = st.data;
+  const a = d[y * st.w + x] * (1 - tx) + d[y * st.w + x + 1] * tx;
+  const b = d[(y + 1) * st.w + x] * (1 - tx) + d[(y + 1) * st.w + x + 1] * tx;
+  return a * (1 - ty) + b * ty;
+}
+
+/**
+ * Odbija stempel w terenie: kwadrat o boku 2·promień, obrócony o `brush.angle`. Wysokość zmienia się o
+ * `wartość · height`; przy `midZero` szary 50% oznacza „bez zmian” (ciemniejsze obniża, jaśniejsze podnosi).
+ */
+export function applyStamp(map: MapData, st: HeightStamp, cx: number, cz: number, b: Brush, height: number, midZero = false): Rect | null {
+  const h = map.terrain.heights;
+  const { nx, nz } = map.terrain;
+  const [sx, sz] = cellSize(map);
+  const r = b.radius * Math.SQRT2;
+  const i0 = Math.max(0, Math.floor((cx - r) / sx));
+  const i1 = Math.min(nx - 1, Math.ceil((cx + r) / sx));
+  const j0 = Math.max(0, Math.floor((cz - r) / sz));
+  const j1 = Math.min(nz - 1, Math.ceil((cz + r) / sz));
+  if (i0 > i1 || j0 > j1 || st.w < 2 || st.h < 2) return null;
+  let any = false;
+  for (let j = j0; j <= j1; j++)
+    for (let i = i0; i <= i1; i++) {
+      const [x, z] = brushLocal(i * sx - cx, j * sz - cz, b.angle);
+      const u = x / (2 * b.radius) + 0.5;
+      const v = z / (2 * b.radius) + 0.5;
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+      let val = sampleStamp(st, u, v);
+      if (midZero) val = val * 2 - 1;
+      if (val === 0) continue;
+      h[j * nx + i] += val * height;
+      any = true;
+    }
+  return any ? { i0, j0, i1, j1 } : null;
 }
 
 /** Malowanie warstwy: zwiększa jej wagę i proporcjonalnie zmniejsza pozostałe. */

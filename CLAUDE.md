@@ -10,7 +10,7 @@ Uniwersalny edytor map 3D działający w przeglądarce, dla osób, które nie pr
 - Vite 8 + TypeScript 7 (strict) + Three.js z npm, testy Vitest. Wszystkie wersje przypięte w `package.json`, bez `^`. Lokalny Node: 26.
 - Bez serwera i bez frameworka UI: statyczna strona, interfejs to DOM, scena to Three.js.
 - `npm start` (instaluje zależności i otwiera edytor pod http://localhost:5173), `npm run dev`, `npm run build` (instalacja + typecheck + statyczna strona w `dist/`, `base: './'`, więc działa z dowolnego katalogu), `npm run preview`, `npm test`.
-- Wtyczka `edytor-examples` w `vite.config.ts` udostępnia pliki z `examples/` obok edytora (nie `publicDir` – Vite zabrania importu z niego, a kod importuje schemat): przykładowy schemat (`schemat-przyklad.json`) i model (`modele/kladka.glb`) trafiają do zbudowanej strony. Model odtwarza `node tools/make-example-glb.mjs`.
+- Wtyczka `edytor-examples` w `vite.config.ts` udostępnia pliki z `examples/` obok edytora (nie `publicDir` – Vite zabrania importu z niego, a kod importuje schemat): przykładowy schemat (`schemat-przyklad.json`) i model (`modele/kladka.glb`) trafiają do zbudowanej strony. Model odtwarza `node tools/make-example-glb.mjs`, stemple wysokości (`stemple/*.png`) – `node tools/make-example-stamps.mjs`.
 - Wersja: jedno źródło to `version` w `package.json` (Vite wstawia `__APP_VERSION__`, widoczne w edytorze jako „Edytor map alfa X.Y.Z”).
 
 ## Sposób pracy

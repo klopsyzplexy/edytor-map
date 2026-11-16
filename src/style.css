@@ -144,3 +144,12 @@ label.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; curso
 .toast.hide { opacity: 0; }
 .minimap { position: absolute; right: 10px; bottom: 10px; padding: 3px; background: #000a; border: 1px solid var(--line); border-radius: 5px; line-height: 0; }
 .minimap canvas { cursor: crosshair; image-rendering: pixelated; display: block; }
+.shape-row { display: flex; gap: 4px; margin: 6px 0; }
+.shape-row button { flex: 1; display: flex; align-items: center; gap: 5px; justify-content: center; padding: 4px 4px; }
+.shape-icon { display: inline-block; width: 10px; height: 10px; border: 1.5px solid currentColor; }
+.shape-icon.circle { border-radius: 50%; }
+.shape-icon.diamond { transform: rotate(45deg) scale(0.85); }
+.stamp-list { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px; }
+.stamp-list button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; font-size: 11px; overflow: hidden; }
+.stamp-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 3px; background: #000; }
+.stamp-list span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

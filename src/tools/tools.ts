@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import type { Ctx } from '../context';
 import { cloneObject, heightAt, type MapObject, type Vec3 } from '../core/map';
 import { getType, locText } from '../core/schema';
-import { applyHeightBrush, paintLayer } from '../core/terrain';
+import { applyHeightBrush, applyStamp, paintLayer } from '../core/terrain';
 import { getLang, t } from '../i18n';
 
 export interface Tool {
@@ -15,6 +15,8 @@ export interface Tool {
   tick?(dt: number): void;
   activate?(): void;
   deactivate?(): void;
+  /** Odświeża kursor pędzla po zmianie rozmiaru, kształtu lub obrotu. */
+  refreshCursor?(): void;
   hint(): string;
 }
 
@@ -264,7 +266,15 @@ abstract class BrushTool implements Tool {
   protected cursor(e: { clientX: number; clientY: number }): void {
     this.hit = this.ctx.terrainHit(e);
     const b = this.ctx.state.brush;
+    this.ctx.terrain.setBrushShape(b.shape ?? 'circle', b.angle ?? 0, b.softness);
     this.ctx.terrain.setBrush(this.hit?.[0] ?? 0, this.hit?.[2] ?? 0, b.radius, !!this.hit, this.color());
+  }
+
+  /** Odświeża kursor po zmianie pędzla z klawiatury (rozmiar, obrót). */
+  refreshCursor(): void {
+    const b = this.ctx.state.brush;
+    this.ctx.terrain.setBrushShape(b.shape ?? 'circle', b.angle ?? 0, b.softness);
+    if (this.hit) this.ctx.terrain.setBrush(this.hit[0], this.hit[2], b.radius, true, this.color());
   }
 
   down(e: PointerEvent): void {
@@ -336,6 +346,77 @@ export class PaintTool extends BrushTool {
     const layer = this.invert ? this.ctx.doc.schema.terrainLayers[0].id : this.ctx.state.paintLayer;
     const r = paintLayer(this.ctx.doc.map, layer, hit[0], hit[2], this.ctx.state.brush, dt);
     this.ctx.doc.strokeChanged(r, 'layers');
+  }
+}
+
+// ---------------- Stempel ----------------
+
+/** Klik odbija stempel; przeciąganie odbija kolejne co promień (np. wąwóz wzdłuż drogi). Shift odwraca. */
+export class StampTool implements Tool {
+  private hit: Vec3 | null = null;
+  private last: Vec3 | null = null;
+  private invert = false;
+
+  constructor(private ctx: Ctx) {}
+
+  private entry() {
+    return this.ctx.stamps.get(this.ctx.state.stamp.id);
+  }
+
+  hint(): string {
+    const e = this.entry();
+    return t('hint.stamp', { name: e ? (e.builtin ? t(e.name) : e.name) : '—' });
+  }
+
+  refreshCursor(): void {
+    const b = this.ctx.state.brush;
+    const e = this.entry();
+    this.ctx.terrain.setStamp(e?.stamp ?? null, this.ctx.state.stamp.midZero);
+    this.ctx.terrain.setBrushShape('stamp', b.angle ?? 0, b.softness);
+    if (this.hit) this.ctx.terrain.setBrush(this.hit[0], this.hit[2], b.radius, true, 0xffd000);
+  }
+
+  deactivate(): void {
+    this.ctx.terrain.setBrush(0, 0, 1, false);
+    this.ctx.terrain.setBrushShape(this.ctx.state.brush.shape ?? 'circle', this.ctx.state.brush.angle ?? 0, this.ctx.state.brush.softness);
+    if (this.last) this.ctx.doc.endStroke('heights');
+    this.last = null;
+  }
+
+  private stampAt(p: Vec3): void {
+    const e = this.entry();
+    if (!e?.stamp) return;
+    const s = this.ctx.state;
+    const r = applyStamp(this.ctx.doc.map, e.stamp, p[0], p[2], s.brush, s.stamp.height * (this.invert ? -1 : 1), s.stamp.midZero);
+    this.ctx.doc.strokeChanged(r, 'heights');
+    this.last = p;
+  }
+
+  down(e: PointerEvent): void {
+    if (e.button !== 0) return;
+    this.move(e);
+    if (!this.hit) return;
+    if (!this.entry()?.stamp) {
+      this.ctx.toast(t('toast.noStamp'), 'error');
+      return;
+    }
+    this.invert = e.shiftKey;
+    this.ctx.doc.beginStroke();
+    this.stampAt(this.hit);
+  }
+
+  move(e: PointerEvent): void {
+    this.hit = this.ctx.terrainHit(e);
+    const b = this.ctx.state.brush;
+    this.refreshCursor();
+    this.ctx.terrain.setBrush(this.hit?.[0] ?? 0, this.hit?.[2] ?? 0, b.radius, !!this.hit, 0xffd000);
+    if (this.last && this.hit && Math.hypot(this.hit[0] - this.last[0], this.hit[2] - this.last[2]) >= b.radius) this.stampAt(this.hit);
+  }
+
+  up(): void {
+    if (!this.last) return;
+    this.last = null;
+    this.ctx.doc.endStroke('heights');
   }
 }
 

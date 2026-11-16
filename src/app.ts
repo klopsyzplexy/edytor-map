@@ -19,7 +19,8 @@ import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
 import { loadAutosave, writeAutosave } from './storage/autosave';
 import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, saveTextFile, type FsHandle } from './storage/files';
-import { PaintTool, PlaceTool, SculptTool, SelectTool, type Tool } from './tools/tools';
+import { StampLibrary } from './tools/stamps';
+import { PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
 import { alertBox, confirmBox, helpDialog, newMapDialog, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
@@ -32,14 +33,16 @@ export class App implements Ctx {
   terrain!: TerrainMesh;
   objects!: ObjectsView;
   models = new ModelLibrary();
+  stamps = new StampLibrary();
   gizmo: Gizmo;
   clipboard: MapObject[] = [];
   state: EditorState = {
     tool: 'select',
     transformMode: 'translate',
     heightTool: 'raise',
-    brush: { radius: 4, strength: 0.5, softness: 0.5, target: 1 },
+    brush: { radius: 4, strength: 0.5, softness: 0.5, target: 1, shape: 'circle', angle: 0 },
     paintLayer: '',
+    stamp: { id: 'gora', height: 4, midZero: false },
     placeType: null,
     snap: false,
     gridStep: 1,
@@ -94,6 +97,9 @@ export class App implements Ctx {
     this.el.view.append(this.minimap.el);
     this.gizmo = new Gizmo(this.viewport, () => this.doc, () => this.objects);
     this.models.onChange = () => this.objects?.sync();
+    this.stamps.onChange = () => {
+      if (this.doc) this.stateChanged();
+    };
     this.viewport.onTick((time, dt) => {
       this.terrain?.tick(time);
       this.panWithKeys(dt);
@@ -115,6 +121,7 @@ export class App implements Ctx {
         const schema = parseSchema(saved.schemaRaw);
         const map = parseMap(saved.mapJson);
         for (const [name, data] of Object.entries(saved.models ?? {})) this.models.addFile(name, data);
+        for (const [name, data] of Object.entries(saved.stamps ?? {})) await this.stamps.addFile(name, data).catch(() => null);
         this.schemaRaw = saved.schemaRaw;
         this.fileName = saved.fileName;
         this.init(schema, map);
@@ -137,7 +144,7 @@ export class App implements Ctx {
       this.doc = new EditorDoc(schema, map);
       this.objects = new ObjectsView(this.doc, this.models);
       this.viewport.root.add(this.objects.group);
-      this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this) };
+      this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this) };
       this.bindDoc();
       this.onMapReplaced();
     } else this.doc.setMap(map, schema);
@@ -207,12 +214,17 @@ export class App implements Ctx {
     const same = this.state.tool === tool;
     this.state.tool = tool;
     if (!same || tool === 'place') this.tools[tool].activate?.();
-    if (tool === 'sculpt' || tool === 'paint') this.leftTab = 'terrain';
+    if (tool === 'sculpt' || tool === 'paint' || tool === 'stamp') this.leftTab = 'terrain';
     if (tool === 'place') this.leftTab = 'objects';
     this.stateChanged();
   }
 
+  refreshBrush(): void {
+    this.tools[this.state.tool].refreshCursor?.();
+  }
+
   stateChanged(): void {
+    this.tools[this.state.tool].refreshCursor?.();
     this.applyViewState();
     this.renderToolbar();
     this.renderLeft();
@@ -269,7 +281,7 @@ export class App implements Ctx {
     c.addEventListener('dblclick', (e) => this.tools[this.state.tool].dblclick?.(e));
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerleave', () => {
-      if (this.state.tool === 'sculpt' || this.state.tool === 'paint') this.terrain.setBrush(0, 0, 1, false);
+      if (this.state.tool === 'sculpt' || this.state.tool === 'paint' || this.state.tool === 'stamp') this.terrain.setBrush(0, 0, 1, false);
     });
   }
 
@@ -279,6 +291,30 @@ export class App implements Ctx {
     const right = (this.held.has('ArrowRight') ? 1 : 0) - (this.held.has('ArrowLeft') ? 1 : 0);
     const fwd = (this.held.has('ArrowUp') ? 1 : 0) - (this.held.has('ArrowDown') ? 1 : 0);
     if (right || fwd) this.viewport.panScreen(right, fwd, dt, this.held.has('Shift'));
+  }
+
+  /** [ ] rozmiar, Shift + [ ] siła, „,” „.” obrót pędzla (po kodzie klawisza – działa w każdym układzie klawiatury). */
+  private brushKey(e: KeyboardEvent): boolean {
+    const b = this.state.brush;
+    switch (e.code) {
+      case 'BracketLeft':
+      case 'BracketRight': {
+        const up = e.code === 'BracketRight';
+        if (e.shiftKey) b.strength = Math.min(1, Math.max(0.05, Math.round((b.strength + (up ? 0.05 : -0.05)) * 100) / 100));
+        else b.radius = up ? Math.round(b.radius * 1.25 * 2) / 2 + 0.5 : Math.max(0.5, Math.round(b.radius * 0.8 * 2) / 2);
+        this.stateChanged();
+        this.toast(e.shiftKey ? t('toast.brushStrength', { v: b.strength }) : t('toast.brushSize', { v: b.radius }));
+        return true;
+      }
+      case 'Comma':
+      case 'Period': {
+        const step = e.shiftKey ? 5 : 15;
+        b.angle = (((b.angle ?? 0) + (e.code === 'Period' ? step : -step)) % 360 + 360) % 360;
+        this.stateChanged();
+        return true;
+      }
+    }
+    return false;
   }
 
   private setSpace(on: boolean): void {
@@ -332,6 +368,7 @@ export class App implements Ctx {
       }
       const s = this.state;
       const handled = (() => {
+        if (!mod && this.brushKey(e)) return true;
         if (mod) {
           switch (key) {
             case 'z':
@@ -385,13 +422,8 @@ export class App implements Ctx {
             s.heightTool = (['raise', 'lower', 'smooth', 'flatten', 'noise'] as const)[Number(key) - 1];
             this.setTool('sculpt');
             return true;
-          case '[':
-            s.brush.radius = Math.max(0.5, Math.round(s.brush.radius * 0.8 * 2) / 2);
-            this.stateChanged();
-            return true;
-          case ']':
-            s.brush.radius = Math.round(s.brush.radius * 1.25 * 2) / 2 + 0.5;
-            this.stateChanged();
+          case 't':
+            this.setTool('stamp');
             return true;
           case 'delete':
           case 'backspace':
@@ -668,7 +700,7 @@ export class App implements Ctx {
       const models: Record<string, ArrayBuffer> = {};
       for (const [k, v] of this.models.fileData) models[k] = v;
       const savedAt = Date.now();
-      await writeAutosave({ schemaRaw: this.schemaRaw, mapJson: mapToJson(this.doc.map), savedAt, models, fileName: this.fileName });
+      await writeAutosave({ schemaRaw: this.schemaRaw, mapJson: mapToJson(this.doc.map), savedAt, models, stamps: this.stamps.custom(), fileName: this.fileName });
       this.savedAt = savedAt;
       this.renderStatus();
     } catch (e) {

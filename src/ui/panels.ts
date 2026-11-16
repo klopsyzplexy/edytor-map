@@ -2,7 +2,8 @@
 import type { Ctx } from '../context';
 import type { MapObject, Vec3 } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
-import type { HeightTool } from '../core/terrain';
+import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
+import { openBinaryFiles } from '../storage/files';
 import { validateMap, type Issue } from '../core/validate';
 import { getLang, t } from '../i18n';
 import { clear, h } from './dom';
@@ -120,9 +121,30 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
           ),
         ),
       ),
-      slider(t('terrain.size'), s.brush.radius, 0.5, Math.round(maxR), 0.5, (v) => (s.brush.radius = v), 'radius', '[ / ]'),
-      slider(t('terrain.strength'), s.brush.strength, 0.05, 1, 0.05, (v) => (s.brush.strength = v), 'strength'),
-      slider(t('terrain.softness'), s.brush.softness, 0, 1, 0.05, (v) => (s.brush.softness = v), 'softness'),
+      h(
+        'div',
+        { class: 'shape-row', title: t('terrain.shape') },
+        ...BRUSH_SHAPES.map((sh) =>
+          h(
+            'button',
+            {
+              class: (s.brush.shape ?? 'circle') === sh ? 'active' : '',
+              title: t(`terrain.shape.${sh}`),
+              onclick: () => {
+                s.brush.shape = sh;
+                if (s.tool !== 'sculpt' && s.tool !== 'paint') ctx.setTool('sculpt');
+                else ctx.stateChanged();
+              },
+            },
+            h('span', { class: `shape-icon ${sh}` }),
+            t(`terrain.shape.${sh}`),
+          ),
+        ),
+      ),
+      slider(t('terrain.size'), s.brush.radius, 0.5, Math.round(maxR), 0.5, (v) => ((s.brush.radius = v), ctx.refreshBrush()), 'radius', '[ / ]'),
+      slider(t('terrain.strength'), s.brush.strength, 0.05, 1, 0.05, (v) => (s.brush.strength = v), 'strength', 'Shift + [ / ]'),
+      slider(t('terrain.softness'), s.brush.softness, 0, 1, 0.05, (v) => ((s.brush.softness = v), ctx.refreshBrush()), 'softness'),
+      slider(t('terrain.angle'), s.brush.angle ?? 0, 0, 359, 1, (v) => ((s.brush.angle = v), ctx.refreshBrush()), 'angle', ', / .'),
       h(
         'label',
         { class: 'inline', title: t('terrain.targetHint') },
@@ -130,6 +152,67 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
         h('input', { type: 'number', step: 0.1, value: s.brush.target, 'data-key': 'target', onchange: (e: Event) => (s.brush.target = Number((e.target as HTMLInputElement).value) || 0) }),
       ),
       h('p', { class: 'muted small' }, t('terrain.sculptHelp')),
+
+      h('h3', {}, t('terrain.stamp'), ' ', h('kbd', {}, 'T')),
+      h(
+        'div',
+        { class: 'stamp-list' },
+        ...ctx.stamps.entries.map((st) =>
+          h(
+            'button',
+            {
+              class: `stamp${s.tool === 'stamp' && s.stamp.id === st.id ? ' active' : ''}`,
+              title: st.builtin ? t(st.name) : st.name,
+              onclick: () => {
+                s.stamp.id = st.id;
+                s.stamp.midZero = st.midZero;
+                ctx.setTool('stamp');
+              },
+            },
+            h('img', { src: st.url, alt: '' }),
+            h('span', {}, st.builtin ? t(st.name) : st.name),
+          ),
+        ),
+      ),
+      h(
+        'label',
+        { class: 'inline', title: t('terrain.stampHeightHint') },
+        t('terrain.stampHeight'),
+        h('input', { type: 'number', step: 0.5, value: s.stamp.height, 'data-key': 'stampHeight', onchange: (e: Event) => (s.stamp.height = Number((e.target as HTMLInputElement).value) || 0) }),
+      ),
+      h(
+        'label',
+        { class: 'check' },
+        h('input', {
+          type: 'checkbox',
+          checked: s.stamp.midZero,
+          'data-key': 'stampMid',
+          onchange: (e: Event) => {
+            s.stamp.midZero = (e.target as HTMLInputElement).checked;
+            ctx.stateChanged();
+          },
+        }),
+        t('terrain.stampMid'),
+      ),
+      h(
+        'button',
+        {
+          onclick: async () => {
+            for (const f of await openBinaryFiles('image/*')) {
+              try {
+                const st = await ctx.stamps.addFile(f.name, f.data);
+                s.stamp.id = st.id;
+                s.stamp.midZero = false;
+                ctx.setTool('stamp');
+              } catch (e) {
+                ctx.toast(`${f.name}: ${String(e)}`, 'error');
+              }
+            }
+          },
+        },
+        t('terrain.stampUpload'),
+      ),
+      h('p', { class: 'muted small' }, t('terrain.stampHelp')),
 
       h('h3', {}, t('terrain.layers')),
       h(

@@ -1,0 +1,168 @@
+// Format pliku mapy (JSON). Opis dla twórców gier: docs/formaty.md.
+import { decodeF32, decodeU8, encodeF32, encodeU8 } from './binary';
+import type { MapData, MapGroup, MapObject, Vec3 } from './map';
+import type { PropValue } from './schema';
+import type { WalkableSurface } from './walkable';
+
+export const FORMAT_ID = 'edytor-map';
+export const FORMAT_VERSION = 1;
+
+/** Dane wyliczane przy eksporcie dla gry; przy wczytywaniu są pomijane (edytor liczy je od nowa). */
+export interface MapDerived {
+  /** Maska nieprzechodniości (255 = nie można przejść), ta sama siatka co teren. */
+  blocked?: Uint8Array;
+  walkable?: WalkableSurface[];
+}
+
+export class MapFormatError extends Error {}
+
+export interface MapFileJson {
+  format: typeof FORMAT_ID;
+  formatVersion: number;
+  editorVersion?: string;
+  schema: { id: string; version: string };
+  settings: MapData['settings'];
+  terrain: {
+    resolution: [number, number];
+    encoding: 'base64';
+    heights: string;
+    layers: Record<string, string>;
+  };
+  groups: MapGroup[];
+  objects: Array<Omit<MapObject, 'points'> & { points?: Vec3[] }>;
+  derived?: {
+    blocked?: string;
+    walkable?: WalkableSurface[];
+  };
+}
+
+export function serializeMap(map: MapData, derived?: MapDerived, editorVersion?: string): MapFileJson {
+  const t = map.terrain;
+  const layers: Record<string, string> = {};
+  for (const [id, a] of Object.entries(t.layers)) layers[id] = encodeU8(a);
+  const file: MapFileJson = {
+    format: FORMAT_ID,
+    formatVersion: FORMAT_VERSION,
+    ...(editorVersion ? { editorVersion } : {}),
+    schema: { ...map.schema },
+    settings: structuredClone(map.settings),
+    terrain: { resolution: [t.nx, t.nz], encoding: 'base64', heights: encodeF32(t.heights), layers },
+    groups: map.groups.map((g) => ({ ...g })),
+    objects: map.objects.map((o) => {
+      const { points, ...rest } = o;
+      const out: MapFileJson['objects'][number] = {
+        ...rest,
+        position: [...o.position],
+        rotation: [...o.rotation],
+        scale: [...o.scale],
+        props: { ...o.props },
+      };
+      if (points.length) out.points = points.map((p) => [...p] as Vec3);
+      return out;
+    }),
+  };
+  if (derived && (derived.blocked || derived.walkable)) {
+    file.derived = {};
+    if (derived.blocked) file.derived.blocked = encodeU8(derived.blocked);
+    if (derived.walkable) file.derived.walkable = derived.walkable;
+  }
+  return file;
+}
+
+export function mapToJson(map: MapData, derived?: MapDerived, editorVersion?: string): string {
+  return JSON.stringify(serializeMap(map, derived, editorVersion), null, 1);
+}
+
+type Obj = Record<string, unknown>;
+const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isVec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+/** Migracje starszych wersji formatu: MIGRATIONS[n] zamienia wersję n na n + 1. */
+const MIGRATIONS: Record<number, (f: Obj) => Obj> = {};
+
+export function parseMap(text: string): MapData {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    throw new MapFormatError(`To nie jest poprawny plik JSON: ${(e as Error).message}`);
+  }
+  return deserializeMap(raw);
+}
+
+export function deserializeMap(raw: unknown): MapData {
+  if (!isObj(raw) || raw.format !== FORMAT_ID) throw new MapFormatError('To nie jest plik mapy edytora (brak "format": "edytor-map").');
+  let f = raw;
+  let v = typeof f.formatVersion === 'number' ? f.formatVersion : 0;
+  if (v > FORMAT_VERSION) throw new MapFormatError(`Plik ma nowszą wersję formatu (${v}) niż ten edytor (${FORMAT_VERSION}). Zaktualizuj edytor.`);
+  while (v < FORMAT_VERSION) {
+    const m = MIGRATIONS[v];
+    if (!m) throw new MapFormatError(`Nieobsługiwana wersja formatu: ${v}.`);
+    f = m(f);
+    v++;
+  }
+
+  const schema = isObj(f.schema) ? { id: String(f.schema.id ?? ''), version: String(f.schema.version ?? '') } : { id: '', version: '' };
+  if (!isObj(f.settings)) throw new MapFormatError('Brak sekcji "settings".');
+  const s = f.settings;
+  const size = s.size;
+  if (!Array.isArray(size) || size.length !== 2 || !size.every((x) => typeof x === 'number' && x > 0)) throw new MapFormatError('settings.size musi mieć dwie liczby dodatnie.');
+  const slope = isObj(s.slope) ? s.slope : {};
+
+  if (!isObj(f.terrain)) throw new MapFormatError('Brak sekcji "terrain".');
+  const tr = f.terrain;
+  const res = tr.resolution;
+  if (!Array.isArray(res) || res.length !== 2 || !res.every((x) => Number.isInteger(x) && x >= 2)) throw new MapFormatError('terrain.resolution musi mieć dwie liczby całkowite ≥ 2.');
+  const [nx, nz] = res as [number, number];
+  if (typeof tr.heights !== 'string') throw new MapFormatError('Brak terrain.heights.');
+  const heights = decodeF32(tr.heights);
+  if (heights.length !== nx * nz) throw new MapFormatError(`terrain.heights ma ${heights.length} wartości, a powinno ${nx * nz}.`);
+  const layers: Record<string, Uint8Array> = {};
+  for (const [id, b64] of Object.entries(isObj(tr.layers) ? tr.layers : {})) {
+    if (typeof b64 !== 'string') throw new MapFormatError(`Warstwa "${id}" ma złe dane.`);
+    const a = decodeU8(b64);
+    if (a.length !== nx * nz) throw new MapFormatError(`Warstwa "${id}" ma ${a.length} wartości, a powinno ${nx * nz}.`);
+    layers[id] = a;
+  }
+
+  const groups: MapGroup[] = (Array.isArray(f.groups) ? f.groups : []).filter(isObj).map((g) => ({
+    id: String(g.id),
+    name: String(g.name ?? g.id),
+    hidden: g.hidden === true,
+    locked: g.locked === true,
+  }));
+
+  const objects: MapObject[] = (Array.isArray(f.objects) ? f.objects : []).map((o, i) => {
+    if (!isObj(o) || typeof o.id !== 'string' || typeof o.type !== 'string') throw new MapFormatError(`objects[${i}]: brak "id" lub "type".`);
+    const props: Record<string, PropValue> = {};
+    for (const [k, val] of Object.entries(isObj(o.props) ? o.props : {}))
+      if (val === null || ['number', 'string', 'boolean'].includes(typeof val)) props[k] = val as PropValue;
+    return {
+      id: o.id,
+      type: o.type,
+      name: typeof o.name === 'string' ? o.name : o.id,
+      group: typeof o.group === 'string' ? o.group : null,
+      hidden: o.hidden === true,
+      locked: o.locked === true,
+      position: isVec3(o.position) ? [...o.position] : [0, 0, 0],
+      rotation: isVec3(o.rotation) ? [...o.rotation] : [0, 0, 0],
+      scale: isVec3(o.scale) ? [...o.scale] : [1, 1, 1],
+      points: Array.isArray(o.points) ? o.points.filter(isVec3).map((p) => [...p] as Vec3) : [],
+      props,
+    };
+  });
+
+  return {
+    schema,
+    settings: {
+      name: typeof s.name === 'string' ? s.name : '',
+      size: [size[0], size[1]],
+      resolution: [nx, nz],
+      waterLevel: typeof s.waterLevel === 'number' ? s.waterLevel : 0,
+      slope: { enabled: slope.enabled === true, maxDeg: typeof slope.maxDeg === 'number' ? slope.maxDeg : 40 },
+    },
+    terrain: { nx, nz, heights, layers },
+    groups,
+    objects,
+  };
+}

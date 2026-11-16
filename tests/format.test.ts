@@ -5,6 +5,7 @@ import { createMap, type MapData } from '../src/core/map';
 import { applyHeightBrush, computeSlopeMask, paintLayer } from '../src/core/terrain';
 import { collectWalkable } from '../src/core/walkable';
 import { EditorDoc } from '../src/core/doc';
+import { collectCollision, COLLISION_LINE, COLLISION_ZONE, rasterizeCollision } from '../src/core/collision';
 import { exampleSchema } from './helpers';
 
 function sampleMap(): MapData {
@@ -27,7 +28,13 @@ function sampleMap(): MapData {
     o.rotation = [0, 33.3333, 0];
     o.scale = [1.5, 1, 0.75];
   });
-  doc.groupObjects([start.id, gen.id], 'Grupa A');
+  const ga = doc.groupObjects([start.id, gen.id], 'Grupa A')!;
+  // podgrupa i obie kolizje rysowane
+  doc.groupObjects([gen.id], 'Podgrupa');
+  const line = doc.addObject(COLLISION_LINE, [0, 0, 0], [[30, 1, 2], [40, 1, 2], [40, 1, 12]]);
+  doc.updateObjects([line.id], (o) => (o.props.width = 2.5));
+  const lasso = doc.addObject(COLLISION_ZONE, [0, 0, 0], [[2, 1, 20], [8, 1, 20], [8, 1, 28], [2, 1, 28]]);
+  doc.moveToGroup([lasso.id], [], ga.id);
   doc.updateSettings((s) => (s.slope = { enabled: true, maxDeg: 35 }));
   return map;
 }
@@ -53,7 +60,8 @@ describe('format mapy', () => {
   it('zapis → odczyt → zapis daje identyczny plik (także z danymi pochodnymi)', () => {
     const schema = exampleSchema();
     const map = sampleMap();
-    const derived = { blocked: computeSlopeMask(map), walkable: collectWalkable(schema, map) };
+    const collision = collectCollision(schema, map);
+    const derived = { blocked: rasterizeCollision(map, collision, computeSlopeMask(map)), walkable: collectWalkable(schema, map), collision };
     const a = mapToJson(map, derived, '0.1.0');
     const b = mapToJson(parseMap(a), derived, '0.1.0');
     expect(b).toBe(a);
@@ -70,6 +78,45 @@ describe('format mapy', () => {
     expect(f.derived?.walkable?.[0].triangles).toHaveLength(18);
     // Most 3 × 0,3 × 8 stoi na wysokości 1,5 → górna ściana na 1,8
     expect(f.derived!.walkable![0].triangles[1]).toBeCloseTo(1.8);
+  });
+
+  it('eksport zawiera kolizje rysowane i ściany kolizji, a maska obejmuje ich wnętrze', () => {
+    const schema = exampleSchema();
+    const map = sampleMap();
+    const collision = collectCollision(schema, map);
+    const f = serializeMap(map, { collision, blocked: rasterizeCollision(map, collision) });
+    const line = f.derived!.collision!.find((c) => c.type === COLLISION_LINE)!;
+    expect(line).toMatchObject({ shape: 'line', width: 2.5, points: [[30, 2], [40, 2], [40, 12]] });
+    expect(f.derived!.collision!.find((c) => c.type === COLLISION_ZONE)).toMatchObject({ shape: 'polygon', points: [[2, 20], [8, 20], [8, 28], [2, 28]] });
+    const mask = rasterizeCollision(map, collision);
+    const { nx } = map.terrain;
+    const cell = map.settings.size[0] / (nx - 1);
+    const at = (x: number, z: number) => mask[Math.round(z / cell) * nx + Math.round(x / cell)];
+    expect(at(5, 24)).toBe(255); // w środku lassa
+    expect(at(35, 2.75)).toBe(255); // w pasie linii (grubość 2,5)
+    expect(at(35, 6)).toBe(0); // obok linii
+    expect(at(20, 24)).toBe(0);
+  });
+
+  it('wczytuje plik w formacie 1 (migracja: grupy bez podgrup)', () => {
+    const f = JSON.parse(mapToJson(sampleMap()));
+    f.formatVersion = 1;
+    f.groups = f.groups.map(({ parent: _p, ...g }: Record<string, unknown>) => g);
+    const m = deserializeMap(f);
+    expect(m.groups.every((g) => g.parent === null)).toBe(true);
+  });
+
+  it('naprawia pętle i brakujących rodziców w drzewie grup', () => {
+    const f = JSON.parse(mapToJson(sampleMap()));
+    f.groups = [
+      { id: 'a', name: 'A', parent: 'b' },
+      { id: 'b', name: 'B', parent: 'a' },
+      { id: 'c', name: 'C', parent: 'nie-ma' },
+    ];
+    const m = deserializeMap(f);
+    expect(m.groups.find((g) => g.id === 'c')!.parent).toBeNull();
+    // pętla a ↔ b została przerwana
+    expect(m.groups.some((g) => g.parent === null && (g.id === 'a' || g.id === 'b'))).toBe(true);
   });
 
   it('odrzuca złe pliki z czytelnym komunikatem', () => {

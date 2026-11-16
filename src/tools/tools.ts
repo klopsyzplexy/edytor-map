@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import type { Ctx } from '../context';
 import { cloneObject, heightAt, type MapObject, type Vec3 } from '../core/map';
 import { getType, locText } from '../core/schema';
+import { COLLISION_ZONE, simplify, smoothPoints } from '../core/collision';
 import { applyHeightBrush, applyStamp, paintLayer } from '../core/terrain';
+import { cellSize } from '../core/map';
 import { getLang, t } from '../i18n';
 
 export interface Tool {
@@ -417,6 +419,95 @@ export class StampTool implements Tool {
     if (!this.last) return;
     this.last = null;
     this.ctx.doc.endStroke('heights');
+  }
+}
+
+// ---------------- Lasso kolizji ----------------
+
+/** Przeciąganie po terenie rysuje dowolny kształt; po puszczeniu powstaje obszar kolizji (wielokąt). */
+export class LassoTool implements Tool {
+  private points: Vec3[] = [];
+  private drawing = false;
+  private line: THREE.Line;
+
+  constructor(private ctx: Ctx) {
+    this.line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xff4d4d, depthTest: false }));
+    this.line.renderOrder = 10;
+  }
+
+  hint(): string {
+    return t('hint.lasso');
+  }
+
+  activate(): void {
+    this.ctx.viewport.scene.add(this.line);
+    this.points = [];
+    this.update();
+  }
+
+  deactivate(): void {
+    this.ctx.viewport.scene.remove(this.line);
+    this.points = [];
+    this.drawing = false;
+  }
+
+  private step(): number {
+    const [sx, sz] = cellSize(this.ctx.doc.map);
+    return Math.max(Math.min(sx, sz) * 0.75, 0.05);
+  }
+
+  down(e: PointerEvent): void {
+    if (e.button !== 0) return;
+    const hit = this.ctx.terrainHit(e);
+    if (!hit) return;
+    this.drawing = true;
+    this.points = [hit];
+    this.update();
+  }
+
+  move(e: PointerEvent): void {
+    if (!this.drawing) return;
+    const hit = this.ctx.terrainHit(e);
+    if (!hit) return;
+    const last = this.points[this.points.length - 1];
+    if (Math.hypot(hit[0] - last[0], hit[2] - last[2]) < this.step()) return;
+    this.points.push(hit);
+    this.update();
+  }
+
+  up(): void {
+    if (!this.drawing) return;
+    this.drawing = false;
+    const { doc, state } = this.ctx;
+    // uproszczenie usuwa drgania ręki, wygładzanie zaokrągla narożniki
+    let pts = simplify(this.points, this.step() * 0.6, true);
+    pts = smoothPoints(pts, true, state.lassoSmooth);
+    pts = simplify(pts, this.step() * 0.15, true).map((p) => [p[0], heightAt(doc.map, p[0], p[2]), p[2]] as Vec3);
+    this.points = [];
+    this.update();
+    if (pts.length < 3) {
+      this.ctx.toast(t('toast.lassoSmall'), 'error');
+      return;
+    }
+    doc.addObject(COLLISION_ZONE, [0, 0, 0], pts);
+    this.ctx.toast(t('toast.lassoDone', { n: pts.length }));
+  }
+
+  key(e: KeyboardEvent): boolean {
+    if (e.key === 'Escape' && this.drawing) {
+      this.drawing = false;
+      this.points = [];
+      this.update();
+      return true;
+    }
+    return false;
+  }
+
+  private update(): void {
+    const pts = this.points.length >= 2 ? [...this.points, this.points[0]] : [];
+    this.line.visible = pts.length >= 2;
+    this.line.geometry.dispose();
+    this.line.geometry = new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(p[0], p[1] + 0.1, p[2])));
   }
 }
 

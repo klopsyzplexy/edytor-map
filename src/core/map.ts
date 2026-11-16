@@ -12,6 +12,8 @@ export type Vec3 = [number, number, number];
 export interface MapGroup {
   id: string;
   name: string;
+  /** Grupa nadrzędna (podgrupy) albo null. */
+  parent: string | null;
   hidden: boolean;
   locked: boolean;
 }
@@ -136,7 +138,7 @@ export function createObject(schema: Schema, map: MapData, typeId: string, at: V
   return {
     id: newId(),
     type: typeId,
-    name: `${typeId}-${sameType + 1}`,
+    name: `${typeId.replace(/^@/, '')}-${sameType + 1}`,
     group: null,
     hidden: false,
     locked: false,

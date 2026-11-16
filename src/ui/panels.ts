@@ -1,6 +1,8 @@
 // Panele boczne: paleta obiektów, teren, lista obiektów, właściwości, walidacja.
 import type { Ctx } from '../context';
 import type { MapObject, Vec3 } from '../core/map';
+import { BUILTIN_TYPES, COLLISION_LINE, simplify, smoothPoints } from '../core/collision';
+import { cellSize, heightAt } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
 import { openBinaryFiles } from '../storage/files';
@@ -47,6 +49,37 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
       cats.get(c)!.push(ty);
     }
     root.append(h('p', { class: 'muted small' }, t('palette.intro')));
+    // kolizje rysowane – wbudowane w edytor, działają z każdym schematem
+    const st = ctx.state;
+    root.append(
+      h('h3', {}, t('builtin.category')),
+      h(
+        'div',
+        { class: 'palette' },
+        h(
+          'button',
+          { class: `palette-item${st.tool === 'lasso' ? ' active' : ''}`, title: t('builtin.collisionZoneHint'), onclick: () => ctx.setTool('lasso') },
+          swatch(BUILTIN_TYPES[0].look.color),
+          h('span', { class: 'name' }, t('tool.lasso')),
+          h('kbd', { class: 'kind' }, 'L'),
+        ),
+        h(
+          'button',
+          {
+            class: `palette-item${st.tool === 'place' && st.placeType === COLLISION_LINE ? ' active' : ''}`,
+            title: t('builtin.collisionLineHint'),
+            onclick: () => {
+              st.placeType = COLLISION_LINE;
+              ctx.setTool('place');
+            },
+          },
+          swatch(BUILTIN_TYPES[1].look.color),
+          h('span', { class: 'name' }, t('tool.line')),
+          h('kbd', { class: 'kind' }, 'K'),
+        ),
+      ),
+      slider(t('lasso.smooth'), st.lassoSmooth, 0, 3, 1, (v) => (st.lassoSmooth = v), 'lassoSmooth', t('lasso.smoothHint')),
+    );
     for (const [cat, types] of cats) {
       root.append(
         h('h3', {}, cat),
@@ -61,6 +94,7 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
                 title: [L(ty.hint), t(`kind.${ty.kind}`)].filter(Boolean).join(' – '),
                 onclick: () => {
                   ctx.state.placeType = ty.id;
+                  ctx.state.lastPaletteType = ty.id;
                   ctx.setTool('place');
                 },
               },
@@ -552,7 +586,19 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
           vecRow(t('props.scale'), o.scale, 'scl', (k, v) => doc.updateObjects(ids, (x) => (x.scale[k] = v || 0.01), 'scale')),
         );
       } else {
-        root.append(h('p', { class: 'muted small' }, t('props.points', { n: o.points.length }) + ' ' + t('props.pointsHelp')));
+        const closed = ty.kind === 'zone';
+        const reshape = (fn: (pts: Vec3[]) => Vec3[], label: string) =>
+          doc.updateObjects(ids, (x) => (x.points = fn(x.points).map((p) => [p[0], heightAt(doc.map, p[0], p[2]), p[2]] as Vec3)), label);
+        const tol = Math.min(...cellSize(doc.map)) * 0.5;
+        root.append(
+          h('p', { class: 'muted small' }, t('props.points', { n: o.points.length }) + ' ' + t('props.pointsHelp')),
+          h(
+            'div',
+            { class: 'list-buttons' },
+            h('button', { title: t('props.smoothHint'), onclick: () => reshape((p) => smoothPoints(p, closed, 1), 'smooth') }, t('props.smooth')),
+            h('button', { title: t('props.simplifyHint'), onclick: () => reshape((p) => (p.length > (closed ? 3 : 2) ? simplify(p, tol, closed) : p), 'simplify') }, t('props.simplify')),
+          ),
+        );
       }
     }
     const flags = ty!.flags;

@@ -127,6 +127,31 @@ export class ObjectsView {
       line.renderOrder = 3;
       g.add(line);
     }
+    // linia kolizji: pas o zadanej grubości wzdłuż łamanej
+    const width = t.properties.some((p) => p.id === 'width') && typeof o.props.width === 'number' ? o.props.width : 0;
+    if (t.kind === 'path' && width > 0 && pts.length >= 2) {
+      const pos: number[] = [];
+      const idx: number[] = [];
+      for (let k = 0; k + 1 < pts.length; k++) {
+        const a = pts[k];
+        const b = pts[k + 1];
+        const dir = new THREE.Vector3(b.x - a.x, 0, b.z - a.z);
+        if (dir.lengthSq() < 1e-9) continue;
+        dir.normalize();
+        const n = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(width / 2);
+        // wydłużenie o pół grubości, żeby odcinki zachodziły na siebie na zakrętach
+        const ext = dir.clone().multiplyScalar(k + 2 < pts.length ? width / 2 : 0);
+        const base = pos.length / 3;
+        for (const p of [a.clone().add(n), a.clone().sub(n), b.clone().add(ext).add(n), b.clone().add(ext).sub(n)]) pos.push(p.x, p.y, p.z);
+        idx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setIndex(idx);
+      const band = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      band.renderOrder = 2;
+      g.add(band);
+    }
     if (t.kind === 'zone' && pts.length >= 3) {
       const contour = pts.map((p) => new THREE.Vector2(p.x, p.z));
       const tris = THREE.ShapeUtils.triangulateShape(contour, []);

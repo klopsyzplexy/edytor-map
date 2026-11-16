@@ -2,16 +2,20 @@
 import { decodeF32, decodeU8, encodeF32, encodeU8 } from './binary';
 import type { MapData, MapGroup, MapObject, Vec3 } from './map';
 import type { PropValue } from './schema';
+import type { CollisionShape } from './collision';
 import type { WalkableSurface } from './walkable';
 
 export const FORMAT_ID = 'edytor-map';
-export const FORMAT_VERSION = 1;
+/** Historia: 1 – pierwsza wersja (0.1.0); 2 – grupy z podgrupami (`parent`), `derived.collision` (0.2.0). */
+export const FORMAT_VERSION = 2;
 
 /** Dane wyliczane przy eksporcie dla gry; przy wczytywaniu są pomijane (edytor liczy je od nowa). */
 export interface MapDerived {
   /** Maska nieprzechodniości (255 = nie można przejść), ta sama siatka co teren. */
   blocked?: Uint8Array;
   walkable?: WalkableSurface[];
+  /** Kształty kolizji (wielokąty i linie z grubością) w układzie mapy. */
+  collision?: CollisionShape[];
 }
 
 export class MapFormatError extends Error {}
@@ -33,6 +37,7 @@ export interface MapFileJson {
   derived?: {
     blocked?: string;
     walkable?: WalkableSurface[];
+    collision?: CollisionShape[];
   };
 }
 
@@ -61,10 +66,11 @@ export function serializeMap(map: MapData, derived?: MapDerived, editorVersion?:
       return out;
     }),
   };
-  if (derived && (derived.blocked || derived.walkable)) {
+  if (derived && (derived.blocked || derived.walkable || derived.collision)) {
     file.derived = {};
     if (derived.blocked) file.derived.blocked = encodeU8(derived.blocked);
     if (derived.walkable) file.derived.walkable = derived.walkable;
+    if (derived.collision) file.derived.collision = derived.collision;
   }
   return file;
 }
@@ -78,7 +84,10 @@ const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !
 const isVec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x));
 
 /** Migracje starszych wersji formatu: MIGRATIONS[n] zamienia wersję n na n + 1. */
-const MIGRATIONS: Record<number, (f: Obj) => Obj> = {};
+const MIGRATIONS: Record<number, (f: Obj) => Obj> = {
+  // 1 → 2: grupy dostają pole `parent` (podgrupy); nowa, opcjonalna sekcja derived.collision
+  1: (f) => ({ ...f, formatVersion: 2, groups: (Array.isArray(f.groups) ? f.groups : []).map((g) => (isObj(g) ? { ...g, parent: null } : g)) }),
+};
 
 export function parseMap(text: string): MapData {
   let raw: unknown;
@@ -128,9 +137,23 @@ export function deserializeMap(raw: unknown): MapData {
   const groups: MapGroup[] = (Array.isArray(f.groups) ? f.groups : []).filter(isObj).map((g) => ({
     id: String(g.id),
     name: String(g.name ?? g.id),
+    parent: typeof g.parent === 'string' ? g.parent : null,
     hidden: g.hidden === true,
     locked: g.locked === true,
   }));
+  // nieistniejący rodzic albo pętla w drzewie grup → grupa wraca na najwyższy poziom
+  const gids = new Set(groups.map((g) => g.id));
+  for (const g of groups) {
+    if (g.parent && !gids.has(g.parent)) g.parent = null;
+    const seen = new Set([g.id]);
+    for (let p = g.parent; p; p = groups.find((x) => x.id === p)?.parent ?? null) {
+      if (seen.has(p)) {
+        g.parent = null;
+        break;
+      }
+      seen.add(p);
+    }
+  }
 
   const objects: MapObject[] = (Array.isArray(f.objects) ? f.objects : []).map((o, i) => {
     if (!isObj(o) || typeof o.id !== 'string' || typeof o.type !== 'string') throw new MapFormatError(`objects[${i}]: brak "id" lub "type".`);

@@ -9,7 +9,7 @@ import type { TerrainMesh } from './render/terrainMesh';
 import type { Viewport } from './render/viewport';
 import type { StampLibrary } from './tools/stamps';
 
-export type ToolId = 'select' | 'sculpt' | 'paint' | 'place' | 'stamp';
+export type ToolId = 'select' | 'sculpt' | 'paint' | 'place' | 'stamp' | 'lasso';
 export type TransformMode = 'translate' | 'rotate' | 'scale';
 
 export interface EditorState {
@@ -21,6 +21,10 @@ export interface EditorState {
   /** Stempel: wybrany obraz, wysokość (o ile podnosi biel) i czy szary 50% oznacza „bez zmian”. */
   stamp: { id: string; height: number; midZero: boolean };
   placeType: string | null;
+  /** Ostatni typ wybrany z palety (klawisz O). */
+  lastPaletteType: string | null;
+  /** Lasso kolizji: ile razy wygładzić narysowany kształt (0–3). */
+  lassoSmooth: number;
   snap: boolean;
   gridStep: number;
   showGrid: boolean;

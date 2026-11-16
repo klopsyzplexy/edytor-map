@@ -117,8 +117,8 @@ export class Minimap {
       if (o.points.length >= 2) {
         g.beginPath();
         o.points.forEach((p, n) => (n ? g.lineTo((p[0] / mw) * this.w, (p[2] / md) * this.h) : g.moveTo((p[0] / mw) * this.w, (p[2] / md) * this.h)));
-        if (t?.kind === 'zone' || o.type.startsWith('@')) g.closePath();
-        g.lineWidth = 1;
+        if (t?.kind === 'zone') g.closePath();
+        g.lineWidth = t?.properties.some((p) => p.id === 'width') ? 2 : 1;
         g.stroke();
       } else {
         const c = objectCenter(o);

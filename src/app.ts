@@ -5,6 +5,7 @@ import { EditorDoc } from './core/doc';
 import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/format';
 import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type Schema } from './core/schema';
+import { collectCollision, COLLISION_LINE, rasterizeCollision } from './core/collision';
 import { computeSlopeMask, raycastTerrain } from './core/terrain';
 import type { Issue } from './core/validate';
 import { collectWalkable } from './core/walkable';
@@ -20,7 +21,7 @@ import { Viewport } from './render/viewport';
 import { loadAutosave, writeAutosave } from './storage/autosave';
 import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, saveTextFile, type FsHandle } from './storage/files';
 import { StampLibrary } from './tools/stamps';
-import { PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
+import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
 import { alertBox, confirmBox, helpDialog, newMapDialog, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
@@ -44,6 +45,8 @@ export class App implements Ctx {
     paintLayer: '',
     stamp: { id: 'gora', height: 4, midZero: false },
     placeType: null,
+    lastPaletteType: null,
+    lassoSmooth: 1,
     snap: false,
     gridStep: 1,
     showGrid: false,
@@ -144,7 +147,7 @@ export class App implements Ctx {
       this.doc = new EditorDoc(schema, map);
       this.objects = new ObjectsView(this.doc, this.models);
       this.viewport.root.add(this.objects.group);
-      this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this) };
+      this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this), lasso: new LassoTool(this) };
       this.bindDoc();
       this.onMapReplaced();
     } else this.doc.setMap(map, schema);
@@ -437,7 +440,12 @@ export class App implements Ctx {
             this.actions.toggleHidden(this.doc.selection);
             return true;
           case 'l':
-            this.actions.toggleLocked(this.doc.selection);
+            if (e.shiftKey) this.actions.toggleLocked(this.doc.selection);
+            else this.setTool('lasso');
+            return true;
+          case 'k':
+            s.placeType = COLLISION_LINE;
+            this.setTool('place');
             return true;
           case 'g':
             this.actions.ground();
@@ -604,14 +612,20 @@ export class App implements Ctx {
     toast(t('toast.opened', { name: f.name }));
   }
 
-  /** Dane dla gry wyliczane przy zapisie: maska nieprzechodniości i powierzchnie chodliwe. */
+  /**
+   * Dane dla gry wyliczane przy zapisie: kształty kolizji, maska nieprzechodniości (strome zbocza
+   * i wszystkie kolizje) oraz powierzchnie chodliwe.
+   */
   private derived(): MapDerived {
     const m = this.doc.map;
     const walkable = collectWalkable(this.doc.schema, m, (typeId) => {
       const ty = this.doc.schema.objectTypes.find((x) => x.id === typeId);
       return ty?.look.model ? this.models.walkableTriangles(ty.look.model) : null;
     });
-    return { ...(m.settings.slope.enabled ? { blocked: computeSlopeMask(m) } : {}), ...(walkable.length ? { walkable } : {}) };
+    const collision = collectCollision(this.doc.schema, m);
+    let blocked = m.settings.slope.enabled ? computeSlopeMask(m) : undefined;
+    if (collision.length) blocked = rasterizeCollision(m, collision, blocked);
+    return { ...(blocked ? { blocked } : {}), ...(walkable.length ? { walkable } : {}), ...(collision.length ? { collision } : {}) };
   }
 
   async saveMap(saveAs = false): Promise<void> {

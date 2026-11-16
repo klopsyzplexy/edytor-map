@@ -1,4 +1,5 @@
 // Schemat gry: jedyne źródło wiedzy o konkretnej grze. Czyste funkcje, bez DOM i Three.js.
+import { BUILTIN_TYPES } from './builtinTypes';
 
 /** Tekst w schemacie: zwykły napis albo wersje językowe, np. { "pl": "Most", "en": "Bridge" }. */
 export type LocText = string | Record<string, string>;
@@ -329,8 +330,9 @@ function defaultFor(type: PropType, v: unknown, options?: EnumOption[]): PropVal
   }
 }
 
+/** Typ ze schematu albo wbudowany typ edytora (kolizje rysowane, id z „@”). */
 export function getType(schema: Schema, id: string): ObjectTypeDef | undefined {
-  return schema.objectTypes.find((t) => t.id === id);
+  return schema.objectTypes.find((t) => t.id === id) ?? (id.startsWith('@') ? BUILTIN_TYPES.find((t) => t.id === id) : undefined);
 }
 
 /** Domyślne wartości właściwości nowego obiektu. */

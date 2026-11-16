@@ -146,9 +146,21 @@ export class EditorDoc {
     this.transact('delete', () => (this.map.objects = this.map.objects.filter((o) => !set.has(o.id))), []);
   }
 
-  /** Wkleja kopie obiektów z nowymi id; odwołania między wklejanymi obiektami wskazują na nowe kopie. */
-  pasteObjects(clips: MapObject[], offset: Vec3): MapObject[] {
+  /**
+   * Wkleja kopie obiektów z nowymi id; odwołania między wklejanymi obiektami wskazują na nowe kopie.
+   * Kopiowane grupy (`groups`) powstają od nowa z całą strukturą podgrup.
+   */
+  pasteObjects(clips: MapObject[], offset: Vec3, groups: MapGroup[] = []): MapObject[] {
     if (!clips.length) return [];
+    const exists = (id: string | null) => !!id && this.map.groups.some((g) => g.id === id);
+    const gMap = new Map<string, string>(groups.map((g) => [g.id, newId('g')]));
+    const newGroups = groups.map((g) => ({
+      ...g,
+      id: gMap.get(g.id)!,
+      parent: g.parent && gMap.has(g.parent) ? gMap.get(g.parent)! : exists(g.parent) ? g.parent : null,
+      hidden: false,
+      locked: false,
+    }));
     const idMap = new Map<string, string>();
     const copies = clips.map((c) => {
       const o = cloneObject(c);
@@ -157,58 +169,149 @@ export class EditorDoc {
       o.points = o.points.map((p) => [p[0] + offset[0], p[1] + offset[1], p[2] + offset[2]] as Vec3);
       o.locked = false;
       o.hidden = false;
-      if (o.group && !this.map.groups.some((g) => g.id === o.group)) o.group = null;
+      if (o.group && gMap.has(o.group)) o.group = gMap.get(o.group)!;
+      else if (!exists(o.group)) o.group = null;
       return o;
     });
     for (const o of copies) {
       const t = getType(this.schema, o.type);
       for (const p of t?.properties ?? []) if (p.type === 'ref' && typeof o.props[p.id] === 'string' && idMap.has(o.props[p.id] as string)) o.props[p.id] = idMap.get(o.props[p.id] as string)!;
     }
-    this.transact('paste', () => this.map.objects.push(...copies), copies.map((o) => o.id));
+    this.transact('paste', () => {
+      this.map.groups.push(...newGroups);
+      this.map.objects.push(...copies);
+    }, copies.map((o) => o.id));
     return copies;
   }
 
-  // ---------- grupy ----------
+  // ---------- grupy (drzewo: grupa może mieć podgrupy) ----------
 
-  groupObjects(ids: string[], name: string): MapGroup | null {
-    if (!ids.length) return null;
-    const g: MapGroup = { id: newId('g'), name, hidden: false, locked: false };
+  getGroup(id: string | null): MapGroup | undefined {
+    return id ? this.map.groups.find((g) => g.id === id) : undefined;
+  }
+
+  /** Grupa i wszystkie grupy nad nią (od najbliższej). */
+  groupChain(id: string | null): MapGroup[] {
+    const out: MapGroup[] = [];
+    for (let g = this.getGroup(id); g && !out.includes(g); g = this.getGroup(g.parent)) out.push(g);
+    return out;
+  }
+
+  /** Id grupy i wszystkich jej podgrup (w głąb). */
+  groupDescendants(id: string): Set<string> {
+    const out = new Set([id]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const g of this.map.groups)
+        if (g.parent && out.has(g.parent) && !out.has(g.id)) {
+          out.add(g.id);
+          grew = true;
+        }
+    }
+    return out;
+  }
+
+  /** Obiekty grupy razem z obiektami podgrup. */
+  groupObjectIds(id: string): string[] {
+    const ids = this.groupDescendants(id);
+    return this.map.objects.filter((o) => o.group && ids.has(o.group)).map((o) => o.id);
+  }
+
+  /** Grupy, których cała zawartość jest w podanym zbiorze obiektów (do kopiowania grup z zawartością). */
+  fullGroups(objectIds: string[]): MapGroup[] {
+    const set = new Set(objectIds);
+    return this.map.groups.filter((g) => {
+      const ids = this.groupObjectIds(g.id);
+      return ids.length > 0 && ids.every((id) => set.has(id));
+    });
+  }
+
+  /**
+   * Nowa grupa z zaznaczonych obiektów i grup. Trafia tam, gdzie wszystkie zaznaczone elementy
+   * mają wspólnego rodzica (albo na najwyższy poziom).
+   */
+  groupObjects(ids: string[], name: string, groupIds: string[] = []): MapGroup | null {
+    if (!ids.length && !groupIds.length) return null;
+    const parents = new Set<string | null>([...ids.map((id) => this.getObject(id)?.group ?? null), ...groupIds.map((id) => this.getGroup(id)?.parent ?? null)]);
+    const parent = parents.size === 1 ? [...parents][0] : null;
+    const g: MapGroup = { id: newId('g'), name, parent: groupIds.includes(parent ?? '') ? null : parent, hidden: false, locked: false };
     this.transact('group', () => {
       this.map.groups.push(g);
       for (const id of ids) {
         const o = this.getObject(id);
         if (o) o.group = g.id;
       }
+      for (const id of groupIds) {
+        const x = this.getGroup(id);
+        if (x && x.id !== g.id) x.parent = g.id;
+      }
     });
     return g;
   }
 
+  /** Rozgrupowanie: zawartość grupy (obiekty i podgrupy) przechodzi poziom wyżej. */
   ungroup(groupId: string): void {
+    const g = this.getGroup(groupId);
+    if (!g) return;
     this.transact('ungroup', () => {
-      this.map.groups = this.map.groups.filter((g) => g.id !== groupId);
-      for (const o of this.map.objects) if (o.group === groupId) o.group = null;
+      this.map.groups = this.map.groups.filter((x) => x.id !== groupId);
+      for (const o of this.map.objects) if (o.group === groupId) o.group = g.parent;
+      for (const x of this.map.groups) if (x.parent === groupId) x.parent = g.parent;
     });
   }
 
-  updateGroup(groupId: string, patch: Partial<Omit<MapGroup, 'id'>>): void {
+  updateGroup(groupId: string, patch: Partial<Omit<MapGroup, 'id' | 'parent'>>): void {
     this.transact('group', () => {
-      const g = this.map.groups.find((x) => x.id === groupId);
+      const g = this.getGroup(groupId);
       if (g) Object.assign(g, patch);
     });
   }
 
-  /** Obiekt widoczny w edytorze (sam i jego grupa nie są ukryte). */
-  isVisible(o: MapObject): boolean {
-    if (o.hidden) return false;
-    const g = o.group ? this.map.groups.find((x) => x.id === o.group) : undefined;
-    return !g?.hidden;
+  /**
+   * Przenosi obiekty i grupy do grupy `target` (null = najwyższy poziom), opcjonalnie przed wskazany element
+   * (zmiana kolejności). Grupy nie da się przenieść do niej samej ani do jej podgrupy.
+   */
+  moveToGroup(objectIds: string[], groupIds: string[], target: string | null, before?: { kind: 'object' | 'group'; id: string }): boolean {
+    if (target && !this.getGroup(target)) return false;
+    const blocked = new Set<string>();
+    for (const id of groupIds) for (const d of this.groupDescendants(id)) blocked.add(d);
+    if (target && blocked.has(target)) return false;
+    const objs = objectIds.map((id) => this.getObject(id)).filter((o): o is MapObject => !!o);
+    const grps = groupIds.map((id) => this.getGroup(id)).filter((g): g is MapGroup => !!g);
+    if (!objs.length && !grps.length) return false;
+    this.transact('move-group', () => {
+      for (const o of objs) o.group = target;
+      for (const g of grps) g.parent = target;
+      if (before?.kind === 'object' && objs.length) {
+        const moving = new Set(objs.map((o) => o.id));
+        const rest = this.map.objects.filter((o) => !moving.has(o.id));
+        const k = rest.findIndex((o) => o.id === before.id);
+        const list = this.map.objects.filter((o) => moving.has(o.id));
+        rest.splice(k < 0 ? rest.length : k, 0, ...list);
+        this.map.objects = rest;
+      }
+      if (before?.kind === 'group' && grps.length) {
+        const moving = new Set(grps.map((g) => g.id));
+        const rest = this.map.groups.filter((g) => !moving.has(g.id));
+        const k = rest.findIndex((g) => g.id === before.id);
+        rest.splice(k < 0 ? rest.length : k, 0, ...this.map.groups.filter((g) => moving.has(g.id)));
+        this.map.groups = rest;
+      }
+    });
+    return true;
   }
 
-  /** Obiekt można zaznaczyć w widoku 3D. */
+  /** Obiekt widoczny w edytorze (ani on, ani żadna grupa nad nim nie są ukryte). */
+  isVisible(o: MapObject): boolean {
+    if (o.hidden) return false;
+    return !this.groupChain(o.group).some((g) => g.hidden);
+  }
+
+  /** Obiekt można zaznaczyć w widoku 3D (widoczny i nic nad nim nie jest zablokowane). */
   isPickable(o: MapObject): boolean {
     if (!this.isVisible(o) || o.locked) return false;
-    const g = o.group ? this.map.groups.find((x) => x.id === o.group) : undefined;
-    return !g?.locked;
+    return !this.groupChain(o.group).some((g) => g.locked);
   }
 
   // ---------- ustawienia mapy ----------

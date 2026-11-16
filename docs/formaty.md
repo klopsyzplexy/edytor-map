@@ -169,8 +169,8 @@ Jeden plik JSON. Przykład w skrócie:
 ```jsonc
 {
   "format": "edytor-map",
-  "formatVersion": 1,
-  "editorVersion": "0.1.0",
+  "formatVersion": 2,
+  "editorVersion": "0.2.0",
   "schema": { "id": "przyklad", "version": "1.0" },
   "settings": {
     "name": "Polana",
@@ -185,18 +185,28 @@ Jeden plik JSON. Przykład w skrócie:
     "heights": "AAAAAAAA…",
     "layers": { "trawa": "////…", "woda": "AAAA…" }
   },
-  "groups": [ { "id": "g1", "name": "Las", "hidden": false, "locked": false } ],
+  "groups": [
+    { "id": "g1", "name": "Las", "parent": null, "hidden": false, "locked": false },
+    { "id": "g2", "name": "Polana", "parent": "g1", "hidden": false, "locked": false }
+  ],
   "objects": [
     { "id": "o1", "type": "generator", "name": "generator-1", "group": null, "hidden": false, "locked": false,
       "position": [20, 1.5, 7.5], "rotation": [0, 45, 0], "scale": [1, 1, 1],
       "props": { "nazwa": "Gniazdo", "liczba": 3, "obszar": "o2" } },
     { "id": "o2", "type": "obszar", "name": "obszar-1", "group": null, "hidden": false, "locked": false,
       "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1],
-      "points": [[1, 0, 1], [10, 0, 1], [10, 0.5, 10]], "props": { "nazwa": "" } }
+      "points": [[1, 0, 1], [10, 0, 1], [10, 0.5, 10]], "props": { "nazwa": "" } },
+    { "id": "o4", "type": "@collision-line", "name": "collision-line-1", "group": null, "hidden": false, "locked": false,
+      "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1],
+      "points": [[30, 0, 2], [40, 0, 2], [40, 0, 12]], "props": { "width": 2.5 } }
   ],
   "derived": {
     "blocked": "AAAA…",
-    "walkable": [ { "objectId": "o3", "type": "most", "triangles": [ … ] } ]
+    "walkable": [ { "objectId": "o3", "type": "most", "triangles": [ … ] } ],
+    "collision": [
+      { "objectId": "o4", "type": "@collision-line", "shape": "line", "points": [[30, 2], [40, 2], [40, 12]], "width": 2.5 },
+      { "objectId": "o5", "type": "sciana", "shape": "polygon", "points": [[9, 9.8], [11, 9.8], [11, 10.2], [9, 10.2]] }
+    ]
   }
 }
 ```
@@ -204,6 +214,11 @@ Jeden plik JSON. Przykład w skrócie:
 ### 3.1. Wersja formatu
 
 `formatVersion` rośnie przy każdej zmianie kształtu pliku. Edytor wczytuje starsze wersje (migracje w `src/core/format.ts`). Pliku nowszego niż sam edytor nie otworzy i poprosi o aktualizację edytora.
+
+| Wersja | Edytor | Zmiany |
+|---|---|---|
+| 1 | 0.1.0 | pierwsza wersja |
+| 2 | 0.2.0 | grupy z podgrupami (`groups[].parent`); wbudowane typy kolizji `@collision-zone` i `@collision-line`; sekcja `derived.collision`; `derived.blocked` obejmuje też wszystkie kolizje (3.5). Migracja 1 → 2: każda grupa dostaje `parent: null`. |
 
 ### 3.2. Teren – dlaczego w tym samym pliku
 
@@ -240,14 +255,24 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
 - **Punkt i bryła:** `position` to położenie podstawy obiektu. Bryła o rozmiarze `defaultSize × scale` stoi na tym punkcie, obrócona o `rotation`.
 - **Ścieżka i strefa:** `points` to wierzchołki w układzie mapy, w kolejności rysowania. Strefa jest zamknięta: ostatni punkt łączy się z pierwszym. `position`, `rotation` i `scale` są wtedy nieużywane.
 - **Ściany kolizji** to zwykłe obiekty rodzaju `solid` z `flags.collision = true` (w przykładzie typ `sciana`, niewidoczny w grze).
+- **Kolizje rysowane** to obiekty wbudowanych typów edytora. Działają z każdym schematem i nie trzeba ich w nim deklarować. Ich `type` zaczyna się od `@`, czego nie może mieć typ ze schematu:
+  - `@collision-zone` – obszar nieprzechodni narysowany lassem: wielokąt w `points` (jak strefa);
+  - `@collision-line` – ściana wzdłuż łamanej w `points` (jak ścieżka), z grubością `props.width` w jednostkach mapy.
+
+  Obie są widoczne tylko w edytorze. Gra nie musi czytać tych obiektów: ich kształty są w `derived.collision` (3.8) i w masce `derived.blocked` (3.5).
 
 ### 3.4. Grupy
 
-`groups` to lista grup: `id`, `name`, `hidden`, `locked`. Służą tylko do porządkowania w edytorze.
+`groups` to lista grup: `id`, `name`, `parent` (id grupy nadrzędnej albo `null` – podgrupy tworzą drzewo), `hidden`, `locked`. Obiekt należy do grupy przez swoje pole `group`. Grupy służą tylko do porządkowania w edytorze i nie mają znaczenia dla gry. Ukrycie albo zablokowanie grupy działa na całą jej zawartość, także w podgrupach. Kolejność w `groups` i `objects` to kolejność w drzewie edytora.
 
 ### 3.5. Maska nieprzechodniości (`derived.blocked`)
 
-Gdy w mapie włączono „Oznacz zbyt strome zbocza” (`settings.slope.enabled`), edytor przy zapisie liczy maskę. Ma ona tę samą siatkę co teren: `nx · nz` bajtów, base64. `255` oznacza zbocze bardziej strome niż `settings.slope.maxDeg` (nie można przejść), a `0` – można przejść. Nachylenie liczymy z różnic wysokości sąsiednich punktów. Wchodzenie pod górę nie zmienia szybkości; gra używa maski tylko jako „przejść / nie przejść”.
+Maska ma tę samą siatkę co teren: `nx · nz` bajtów, base64. `255` oznacza „nie można przejść”, a `0` – „można przejść”. Edytor zapisuje ją, gdy jest w niej cokolwiek do oznaczenia. Punkt siatki ma `255`, jeśli:
+
+- w mapie włączono „Oznacz zbyt strome zbocza” (`settings.slope.enabled`) i zbocze w tym punkcie jest bardziej strome niż `settings.slope.maxDeg`. Nachylenie liczymy z różnic wysokości sąsiednich punktów;
+- punkt leży w którymkolwiek kształcie z `derived.collision` (3.8): w obszarze lassa, w pasie linii kolizji albo w obrysie obiektu z `flags.collision`.
+
+Wchodzenie pod górę nie zmienia szybkości; gra używa maski tylko jako „przejść / nie przejść”. Dokładność maski to oczko siatki terenu. Gdy gra potrzebuje dokładniejszych kształtów, bierze je z `derived.collision`.
 
 ### 3.6. Powierzchnie chodliwe (`derived.walkable`)
 
@@ -257,6 +282,23 @@ Dla każdego obiektu typu z `flags.walkable = true` edytor zapisuje trójkąty w
 - **Model `.glb`:** siatki, które mają `walkable` w nazwie (ich ściany skierowane choć trochę do góry). Gdy model takich siatek nie ma – wszystkie prawie poziome ściany modelu skierowane do góry.
 
 Gra liczy wysokość ruchu jako **najwyższą z terenu i powierzchni chodliwych** pod postacią.
+
+### 3.8. Kształty kolizji (`derived.collision`)
+
+Lista wszystkich kolizji w mapie, w układzie mapy na ziemi `(x, z)`:
+
+| Pole | Znaczenie |
+|---|---|
+| `objectId`, `type` | obiekt, z którego pochodzi kształt |
+| `shape` | `polygon` – wielokąt (zamknięty: ostatni punkt łączy się z pierwszym); `line` – łamana |
+| `points` | wierzchołki `[x, z]` |
+| `width` | tylko dla `line`: grubość ściany; nieprzechodnie jest wszystko w odległości ≤ `width / 2` od łamanej |
+
+Skąd się biorą kształty:
+
+- `@collision-zone` → `polygon` z punktami lassa;
+- `@collision-line` → `line` z grubością `props.width`;
+- obiekty typów z `flags.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła → `polygon` – obrys widziany z góry (otoczka wypukła bryły po obrocie i skali; dla modelu – pudełko `defaultSize`).
 
 ### 3.7. Co edytor robi z `derived` przy wczytywaniu
 

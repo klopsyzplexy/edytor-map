@@ -233,5 +233,6 @@
   "sc.gameView": "Game view",
   "sc.save": "Save (with Shift – save as)",
   "sc.open": "Open map",
-  "sc.help": "This help"
+  "sc.help": "This help",
+  "minimap.hint": "Minimap: click or drag to move the camera"
 }

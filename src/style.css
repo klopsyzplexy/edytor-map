@@ -142,3 +142,5 @@ label.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; curso
 .toast { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 8px 14px; box-shadow: 0 4px 16px #0008; transition: opacity 0.4s; }
 .toast.error { border-color: var(--bad); }
 .toast.hide { opacity: 0; }
+.minimap { position: absolute; right: 10px; bottom: 10px; padding: 3px; background: #000a; border: 1px solid var(--line); border-radius: 5px; line-height: 0; }
+.minimap canvas { cursor: crosshair; image-rendering: pixelated; display: block; }

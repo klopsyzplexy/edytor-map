@@ -233,5 +233,6 @@
   "sc.gameView": "Widok gry",
   "sc.save": "Zapisz (z Shift – zapisz jako)",
   "sc.open": "Otwórz mapę",
-  "sc.help": "Ta pomoc"
+  "sc.help": "Ta pomoc",
+  "minimap.hint": "Minimapa: kliknij albo przeciągnij, żeby przenieść kamerę"
 }

@@ -11,6 +11,7 @@ import { collectWalkable } from './core/walkable';
 import { getLang, LANGS, onLangChange, setLang, t, type Lang } from './i18n';
 import { MODEL_ACCEPT } from './core/modelFiles';
 import { Gizmo } from './render/gizmo';
+import { Minimap } from './render/minimap';
 import { importModelFiles, zipModels } from './render/modelImport';
 import { ModelLibrary } from './render/models';
 import { ObjectsView } from './render/objectsView';
@@ -56,6 +57,9 @@ export class App implements Ctx {
   private lastHit: { x: number; y: number; hit: Vec3 | null } | null = null;
   private savedAt: number | null = null;
   private gameView = false;
+  private minimap: Minimap;
+  /** Wciśnięte strzałki (przesuwanie kamery) i spacja (przesuwanie myszą). */
+  private held = new Set<string>();
 
   // elementy interfejsu
   private el = {
@@ -86,10 +90,14 @@ export class App implements Ctx {
     root.append(h('div', { class: 'app' }, this.el.toolbar, h('aside', { class: 'left' }, this.el.tabs, this.el.left), this.el.view, right, this.el.status));
 
     this.viewport = new Viewport(this.el.view);
+    this.minimap = new Minimap(() => this.doc, this.viewport, t('minimap.hint'));
+    this.el.view.append(this.minimap.el);
     this.gizmo = new Gizmo(this.viewport, () => this.doc, () => this.objects);
     this.models.onChange = () => this.objects?.sync();
     this.viewport.onTick((time, dt) => {
       this.terrain?.tick(time);
+      this.panWithKeys(dt);
+      if (this.doc) this.minimap.tick();
       this.objects?.tick(this.viewport.camera);
       this.tools?.[this.state.tool].tick?.(dt);
     });
@@ -141,6 +149,7 @@ export class App implements Ctx {
     const autosave = debounce(() => this.autosave(), 1500);
     d.on('map', () => this.onMapReplaced());
     d.on('objects', () => {
+      this.minimap.invalidate();
       this.objects.sync();
       this.gizmo.refresh();
       this.renderLists();
@@ -155,6 +164,7 @@ export class App implements Ctx {
     d.on('terrain', (p) => {
       const { rect, kind } = p as { rect: { i0: number; j0: number; i1: number; j1: number }; kind: 'heights' | 'layers' | 'all' };
       this.terrain.update(rect, kind);
+      this.minimap.invalidate();
     });
     d.on('settings', () => {
       this.terrain.updateWaterLevel();
@@ -180,6 +190,7 @@ export class App implements Ctx {
     const [w, dd] = this.doc.map.settings.size;
     this.state.brush.radius = Math.max(1, Math.round(Math.max(w, dd) / 16));
     this.objects.sync(true);
+    this.minimap.invalidate();
     this.viewport.frameMap(this.doc.map.settings.size, heightAt(this.doc.map, w / 2, dd / 2));
     if (this.gameView) this.toggleGameView();
     this.setTool('select');
@@ -245,6 +256,7 @@ export class App implements Ctx {
     c.addEventListener('pointerdown', (e) => {
       c.focus();
       this.lastHit = null;
+      if (this.held.has(' ')) return;
       this.tools[this.state.tool].down?.(e);
     });
     c.addEventListener('pointermove', (e) => {
@@ -261,13 +273,45 @@ export class App implements Ctx {
     });
   }
 
+  /** Strzałki przesuwają kamerę (z Shiftem szybciej). */
+  private panWithKeys(dt: number): void {
+    if (!this.held.size) return;
+    const right = (this.held.has('ArrowRight') ? 1 : 0) - (this.held.has('ArrowLeft') ? 1 : 0);
+    const fwd = (this.held.has('ArrowUp') ? 1 : 0) - (this.held.has('ArrowDown') ? 1 : 0);
+    if (right || fwd) this.viewport.panScreen(right, fwd, dt, this.held.has('Shift'));
+  }
+
+  private setSpace(on: boolean): void {
+    if (on) this.held.add(' ');
+    else this.held.delete(' ');
+    this.viewport.setSpacePan(on);
+    this.gizmo.controls.enabled = !on;
+  }
+
   private bindKeys(): void {
+    const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    window.addEventListener('keyup', (e) => {
+      this.held.delete(e.key);
+      if (e.key === 'Shift') this.held.delete('Shift');
+      if (e.key === ' ') this.setSpace(false);
+    });
+    window.addEventListener('blur', () => {
+      this.held.clear();
+      this.setSpace(false);
+    });
     window.addEventListener('keydown', (e) => {
       if (document.querySelector('.modal-overlay')) return;
       const target = e.target instanceof HTMLElement ? e.target : document.body;
       const typing = target.matches('input:not([type=checkbox]):not([type=range]), textarea, select');
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      if (e.key === 'Shift') this.held.add('Shift');
+      if (!typing && !mod && (ARROWS.includes(e.key) || e.key === ' ')) {
+        e.preventDefault();
+        if (e.key === ' ') this.setSpace(true);
+        else this.held.add(e.key);
+        return;
+      }
       if (mod && key === 's') {
         e.preventDefault();
         void this.saveMap(e.shiftKey);
@@ -369,6 +413,9 @@ export class App implements Ctx {
           case 'f':
             this.focusSelection();
             return true;
+          case 'home':
+            this.frameMap();
+            return true;
           case 'x':
             s.snap = !s.snap;
             this.stateChanged();
@@ -400,14 +447,23 @@ export class App implements Ctx {
     this.renderToolbar();
   }
 
+  private frameMap(): void {
+    const [w, d] = this.doc.map.settings.size;
+    if (this.gameView) this.viewport.lookAtPoint(w / 2, heightAt(this.doc.map, w / 2, d / 2), d / 2);
+    else this.viewport.frameMap([w, d], heightAt(this.doc.map, w / 2, d / 2));
+  }
+
+  /** Kamera na całe zaznaczenie (środek i promień obejmujący wszystkie obiekty); bez zaznaczenia – cała mapa. */
   private focusSelection(): void {
     const sel = this.doc.selectedObjects();
-    if (!sel.length) {
-      const [w, d] = this.doc.map.settings.size;
-      this.viewport.frameMap([w, d], heightAt(this.doc.map, w / 2, d / 2));
-      return;
-    }
-    this.viewport.focus(objectCenter(sel[0]));
+    if (!sel.length) return this.frameMap();
+    const pts = sel.flatMap((o) => (o.points.length ? o.points : [o.position]));
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    for (const p of pts) for (let k = 0; k < 3; k++) (min[k] = Math.min(min[k], p[k])), (max[k] = Math.max(max[k], p[k]));
+    const c: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    const size = Math.max(...sel.filter((o) => !o.points.length).map((o) => Math.max(...o.scale) * 2), 2);
+    this.viewport.focus(c, Math.hypot(max[0] - min[0], max[2] - min[2]) / 2 + size);
   }
 
   // ---------------- Akcje ----------------
@@ -631,6 +687,7 @@ export class App implements Ctx {
 
   private renderAll(): void {
     document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => (el.textContent = t(el.dataset.i18n!)));
+    this.minimap.setTitle(t('minimap.hint'));
     this.renderToolbar();
     this.renderLeft();
     this.renderLists();

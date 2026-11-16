@@ -38,15 +38,69 @@ export class Viewport {
     this.setFreeButtons();
     this.controls.screenSpacePanning = false;
     this.controls.maxPolarAngle = Math.PI * 0.495;
+    // kółko przybliża w stronę kursora
+    this.controls.zoomToCursor = true;
 
     new ResizeObserver(() => this.resize()).observe(container);
     this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
   }
 
-  /** Lewy przycisk należy do narzędzi; obrót prawym, przesuwanie środkowym (albo Shift + prawy). */
+  /** Lewy przycisk należy do narzędzi; obrót prawym, przesuwanie środkowym (albo Shift + prawy, albo spacja + lewy). */
   private setFreeButtons(): void {
-    this.controls.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+    this.controls.mouseButtons = { LEFT: this.spacePan ? THREE.MOUSE.PAN : null, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+  }
+
+  private spacePan = false;
+
+  /** Przytrzymana spacja: lewy przycisk przesuwa widok zamiast działać narzędziem. */
+  setSpacePan(on: boolean): void {
+    if (this.spacePan === on) return;
+    this.spacePan = on;
+    this.controls.mouseButtons = { ...this.controls.mouseButtons, LEFT: on ? THREE.MOUSE.PAN : null };
+    this.renderer.domElement.style.cursor = on ? 'grab' : '';
+  }
+
+  /** Przesuwa kamerę razem z punktem, na który patrzy (dx, dz w jednostkach mapy). */
+  panBy(dx: number, dz: number): void {
+    const d = new THREE.Vector3(dx, 0, dz);
+    this.controls.target.add(d);
+    this.camera.position.add(d);
+  }
+
+  /** Przesunięcie klawiszami: kierunek względem ekranu (w górę ekranu = do przodu), prędkość zależy od odległości. */
+  panScreen(right: number, forward: number, dt: number, fast: boolean): void {
+    const f = this.controls.target.clone().sub(this.camera.position);
+    f.y = 0;
+    if (f.lengthSq() < 1e-9) f.set(0, 0, -1);
+    f.normalize();
+    const r = new THREE.Vector3(-f.z, 0, f.x);
+    const speed = Math.max(4, this.camera.position.distanceTo(this.controls.target)) * (fast ? 2.4 : 0.8) * dt;
+    this.panBy((r.x * right + f.x * forward) * speed, (r.z * right + f.z * forward) * speed);
+  }
+
+  /** Ustawia punkt, na który patrzy kamera (zachowuje kąt i odległość). */
+  lookAtPoint(x: number, y: number, z: number): void {
+    const t = this.controls.target;
+    this.panBy(x - t.x, z - t.z);
+    const dy = y - t.y;
+    t.y += dy;
+    this.camera.position.y += dy;
+  }
+
+  /** Ślad widoku na płaszczyźnie y = poziom punktu patrzenia: cztery rogi ekranu (do minimapy). */
+  footprint(): Array<[number, number]> {
+    const y = this.controls.target.y;
+    const far = this.camera.position.distanceTo(this.controls.target) * 6;
+    const out: Array<[number, number]> = [];
+    for (const [x, yy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+      this.raycaster.setFromCamera(new THREE.Vector2(x, yy), this.camera);
+      const r = this.raycaster.ray;
+      let t = r.direction.y < -1e-4 ? (y - r.origin.y) / r.direction.y : far;
+      if (t < 0 || t > far) t = far;
+      out.push([r.origin.x + r.direction.x * t, r.origin.z + r.direction.z * t]);
+    }
+    return out;
   }
 
   onTick(fn: (t: number, dt: number) => void): void {
@@ -83,7 +137,11 @@ export class Viewport {
   focus(p: Vec3, radius = 6): void {
     const dir = this.camera.position.clone().sub(this.controls.target);
     const target = new THREE.Vector3(...p);
-    if (this.mode === 'free') dir.setLength(Math.max(radius * 3, 8));
+    if (this.mode === 'free') {
+      // odległość tak, żeby kula o promieniu `radius` mieściła się w kadrze
+      const fov = (Math.min(this.camera.fov, this.camera.fov * this.camera.aspect) * Math.PI) / 180;
+      dir.setLength(Math.max(radius / Math.sin(fov / 2) * 1.15, 6));
+    }
     this.controls.target.copy(target);
     this.camera.position.copy(target).add(dir);
   }

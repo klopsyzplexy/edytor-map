@@ -121,12 +121,16 @@ Wspólne pola: `id`, `name`, `default` (wartość nowego obiektu), `required` (p
 
 Opcję można zapisać krótko jako napis (`"boss"`): wtedy wartość i nazwa są takie same.
 
-### 2.6. Modele `.glb`
+### 2.6. Modele (`look.model`)
 
-`look.model` to adres pliku `.glb`. Edytor szuka go w tej kolejności:
+`look.model` to adres pliku modelu: `.glb`, `.gltf`, `.fbx` albo `.obj`. **Formatem wewnętrznym edytora jest `.glb`** (binarny glTF 2.0): każdy inny format edytor zamienia na `.glb` przy wczytaniu. Grze najlepiej przekazać właśnie pliki `.glb` („Plik → Pobierz modele jako .glb” daje archiwum `.zip` ze wszystkimi wczytanymi modelami).
 
-1. wśród plików wskazanych przez użytkownika („Plik → Wczytaj modele .glb…”), po samej nazwie pliku – dzięki temu działa schemat wczytany z dysku;
-2. pod adresem względem strony edytora albo pod pełnym adresem URL.
+Edytor szuka modelu w tej kolejności:
+
+1. wśród modeli wskazanych przez użytkownika („Plik → Wczytaj modele…”), po **nazwie pliku bez katalogu i rozszerzenia** – `modele/drzewo.glb` w schemacie pasuje do wczytanego `drzewo.fbx` (po zamianie to `drzewo.glb`); dzięki temu działa schemat wczytany z dysku;
+2. pod adresem względem strony edytora albo pod pełnym adresem URL. Dla `.gltf` i `.obj` pliki towarzyszące (`.bin`, `.mtl`, tekstury) muszą leżeć obok, pod adresami wskazanymi w pliku.
+
+Przy wczytywaniu z dysku pliki towarzyszące (`.bin`, `.mtl`, tekstury `.png/.jpg/.webp/.tga…`) dobierane są po nazwie, bez względu na katalogi. Można też wskazać archiwum `.zip`. Gdy czegoś brakuje, edytor pokazuje listę brakujących plików i wczytuje model bez nich (brak `.bin` w `.gltf` uniemożliwia wczytanie). Materiały Phong/Lambert z `.fbx` i `.obj` są zamieniane na materiały PBR glTF (kolor, tekstura, przezroczystość; połysk przybliżony szorstkością).
 
 Model ma własne wymiary, a obiekt mnoży je przez swoją skalę (`defaultSize` dotyczy tylko prostej bryły). Dopóki model się wczytuje albo gdy wczytać się go nie da, edytor pokazuje zastępczą bryłę z `look.shape` i `defaultSize`. Wczytane pliki modeli trafiają do zapisu roboczego w przeglądarce.
 

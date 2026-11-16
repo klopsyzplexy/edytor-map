@@ -83,4 +83,13 @@ export async function saveTextFile(text: string, suggestedName: string, handle?:
   return { name: suggestedName };
 }
 
+/** Pobiera plik binarny (np. archiwum modeli) do folderu „Pobrane”. */
+export function downloadBlob(blob: Blob, name: string): void {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 export type { FsHandle };

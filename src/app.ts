@@ -9,13 +9,15 @@ import { computeSlopeMask, raycastTerrain } from './core/terrain';
 import type { Issue } from './core/validate';
 import { collectWalkable } from './core/walkable';
 import { getLang, LANGS, onLangChange, setLang, t, type Lang } from './i18n';
+import { MODEL_ACCEPT } from './core/modelFiles';
 import { Gizmo } from './render/gizmo';
+import { importModelFiles, zipModels } from './render/modelImport';
 import { ModelLibrary } from './render/models';
 import { ObjectsView } from './render/objectsView';
 import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
 import { loadAutosave, writeAutosave } from './storage/autosave';
-import { hasFileSystemAccess, openBinaryFiles, openJsonFile, saveTextFile, type FsHandle } from './storage/files';
+import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, saveTextFile, type FsHandle } from './storage/files';
 import { PaintTool, PlaceTool, SculptTool, SelectTool, type Tool } from './tools/tools';
 import { alertBox, confirmBox, helpDialog, newMapDialog, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
@@ -571,13 +573,38 @@ export class App implements Ctx {
     void confirmBox(t('dlg.schemaLoadedTitle'), t('dlg.schemaLoadedText'), t('menu.newMap')).then((ok) => { if (ok) void this.newMap(); });
   }
 
+  /** Import modeli w dowolnym obsługiwanym formacie; każdy zamieniany na .glb. */
   async loadModels(): Promise<void> {
-    const files = await openBinaryFiles('.glb,model/gltf-binary');
-    for (const f of files) this.models.addFile(f.name, f.data);
-    if (files.length) {
-      toast(t('toast.modelsLoaded', { n: files.length }));
-      this.autosave();
+    const files = await openBinaryFiles(MODEL_ACCEPT);
+    if (!files.length) return;
+    toast(t('models.converting'));
+    const { models, problems } = await importModelFiles(files);
+    for (const m of models) this.models.addFile(m.name, m.glb);
+    if (models.length) this.autosave();
+    if (!problems.length) {
+      toast(t('toast.modelsLoaded', { n: models.length }));
+      return;
     }
+    const lines = problems.map((p) => {
+      switch (p.code) {
+        case 'missing':
+          return t('models.missing', { file: p.file, names: p.missing.join(', ') });
+        case 'failed':
+          return t('models.failed', { file: p.file, detail: p.detail });
+        case 'unused':
+          return t('models.unused', { file: p.file });
+        case 'noModel':
+          return t('models.noModel');
+      }
+    });
+    void alertBox(t('models.title'), h('div', {}, h('p', {}, t('models.intro', { n: models.length })), h('ul', {}, ...lines.map((l) => h('li', {}, l)))));
+  }
+
+  /** Wszystkie wczytane modele jako .glb w jednym archiwum – w tym formacie trafiają do gry. */
+  downloadModels(): void {
+    const list = [...this.models.fileData].map(([name, data]) => ({ name, data }));
+    if (!list.length) return toast(t('models.none'), 'error');
+    downloadBlob(new Blob([zipModels(list) as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), 'modele.zip');
   }
 
   private async autosave(): Promise<void> {
@@ -674,6 +701,7 @@ export class App implements Ctx {
         [t('menu.loadSchema'), '', () => void this.loadSchemaFile()],
         [t('menu.exampleSchema'), '', () => this.applySchema(structuredClone(exampleSchemaRaw), 'przyklad')],
         [t('menu.loadModels'), '', () => void this.loadModels()],
+        [t('menu.downloadModels'), '', () => this.downloadModels()],
       ]),
       h('span', { class: 'sep' }),
       btn('↶', `${t('tb.undo')} (Ctrl+Z)`, () => this.doc.undo(), false, !this.doc.history.canUndo),

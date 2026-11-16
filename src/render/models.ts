@@ -1,35 +1,44 @@
-// Modele .glb ze schematu: wczytywanie, pamięć podręczna i powierzchnie chodliwe modeli.
+// Modele ze schematu: wczytywanie, pamięć podręczna i powierzchnie chodliwe modeli.
+// Wewnętrznie każdy model to .glb; inne formaty zamienia import (modelImport.ts).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { fileStem, modelFormat } from '../core/modelFiles';
+import { importModelFromUrl } from './modelImport';
 
 export type ModelState = 'loading' | 'ready' | 'error';
 
 export class ModelLibrary {
   private loader = new GLTFLoader();
   private cache = new Map<string, { state: ModelState; scene?: THREE.Group }>();
-  /** Pliki wskazane przez użytkownika (nazwa pliku → adres blob). */
+  /** Modele wczytane przez użytkownika (nazwa bez rozszerzenia → adres blob z danymi .glb). */
   private files = new Map<string, string>();
-  /** Surowe dane plików (do zapisu roboczego). */
+  /** Dane .glb modeli (klucz: nazwa.glb) – do zapisu roboczego i pobrania. */
   readonly fileData = new Map<string, ArrayBuffer>();
   onChange: () => void = () => {};
 
+  /** Dodaje model .glb. Schemat znajduje go po nazwie pliku bez rozszerzenia (drzewo.fbx → drzewo.glb). */
   addFile(name: string, data: ArrayBuffer): void {
-    const key = baseName(name);
+    const key = fileStem(name);
     const old = this.files.get(key);
     if (old) URL.revokeObjectURL(old);
     this.files.set(key, URL.createObjectURL(new Blob([data], { type: 'model/gltf-binary' })));
-    this.fileData.set(key, data);
+    this.fileData.set(`${key}.glb`, data);
     // przeładuj modele, które wskazują na ten plik
-    for (const k of [...this.cache.keys()]) if (baseName(k) === key) this.cache.delete(k);
+    for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
     this.onChange();
   }
 
   get fileNames(): string[] {
-    return [...this.files.keys()];
+    return [...this.fileData.keys()];
   }
 
-  private resolve(ref: string): string {
-    return this.files.get(baseName(ref)) ?? ref;
+  /** Wczytuje model: najpierw spośród wskazanych plików, potem spod adresu (inne formaty niż .glb są zamieniane). */
+  private async load(ref: string): Promise<THREE.Group> {
+    const local = this.files.get(fileStem(ref));
+    if (local) return (await this.loader.loadAsync(local)).scene;
+    const fmt = modelFormat(ref);
+    if (fmt && fmt !== 'glb') return (await this.loader.parseAsync(await importModelFromUrl(ref), '')).scene;
+    return (await this.loader.loadAsync(ref)).scene;
   }
 
   state(ref: string): ModelState {
@@ -41,13 +50,11 @@ export class ModelLibrary {
     const c = this.cache.get(ref);
     if (!c) {
       this.cache.set(ref, { state: 'loading' });
-      this.loader.load(
-        this.resolve(ref),
-        (gltf) => {
-          this.cache.set(ref, { state: 'ready', scene: gltf.scene });
+      this.load(ref).then(
+        (scene) => {
+          this.cache.set(ref, { state: 'ready', scene });
           this.onChange();
         },
-        undefined,
         () => {
           this.cache.set(ref, { state: 'error' });
           this.onChange();
@@ -97,8 +104,4 @@ export class ModelLibrary {
     }
     return new Float32Array(out);
   }
-}
-
-export function baseName(p: string): string {
-  return p.split(/[\\/]/).pop() ?? p;
 }

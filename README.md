@@ -121,7 +121,21 @@ Opis dla programistów gry: [docs/formaty.md](docs/formaty.md).
 
 - **Plik → Wczytaj schemat gry…** – wybierz plik `.json` dostarczony przez grę. Jeśli ma błędy, edytor pokaże ich listę. Po wczytaniu możesz od razu utworzyć nową mapę.
 - **Plik → Użyj przykładowego schematu** wraca do schematu do nauki (`examples/schemat-przyklad.json`).
-- **Plik → Wczytaj modele .glb…** – jeśli schemat używa modeli 3D, wskaż ich pliki. Edytor dopasuje je po nazwie pliku i zapamięta w wersji roboczej.
+- **Plik → Wczytaj modele…** – jeśli schemat używa modeli 3D, wskaż ich pliki. Edytor dopasuje je po nazwie pliku (bez rozszerzenia, więc `drzewo.fbx` pasuje do `drzewo.glb` w schemacie) i zapamięta w wersji roboczej.
+- **Plik → Pobierz modele jako .glb** – wszystkie wczytane modele w jednym archiwum `.zip`, w formacie, którego używa gra.
+
+### Formaty modeli – który wybrać?
+
+Edytor wczytuje cztery formaty, ale każdy model od razu zamienia na **.glb**. Dzięki temu mapa i gra zawsze używają jednego formatu.
+
+| Format | Co to jest | Co wskazać przy wczytywaniu |
+|---|---|---|
+| **.glb** | Jeden plik ze wszystkim w środku (siatka, materiały, tekstury). | Sam plik. |
+| **.gltf** | To samo co .glb, tylko rozbite na kilka plików: `.gltf` (opis), `.bin` (siatka) i obrazki tekstur. | Wszystkie pliki naraz albo jeden `.zip`. |
+| **.fbx** | Popularny format z Blendera, Mayi i sklepów z modelami. Tekstury bywają w środku albo obok. | Plik `.fbx` i tekstury (albo `.zip`). |
+| **.obj** | Stary, prosty format: tylko kształt. Kolory i tekstury są w osobnym pliku `.mtl` i obrazkach. | Plik `.obj`, `.mtl` i tekstury (albo `.zip`). |
+
+**Wybieraj .glb**, jeśli tylko się da (w Blenderze: *File → Export → glTF 2.0*, opcja „glTF Binary”). Pozostałe formaty też zadziałają. Jeśli czegoś zabraknie (np. tekstury), edytor powie, którego pliku brakuje, i wczyta model bez niego. Najprościej wtedy spakować cały folder modelu do `.zip` i wskazać to archiwum.
 
 ---
 

@@ -48,18 +48,21 @@ Po pierwszym uruchomieniu edytor wczytuje **przykładowy schemat** i tworzy pust
 - po prawej: **Właściwości** zaznaczonego obiektu i **Sprawdzanie mapy** (błędy i ostrzeżenia);
 - na dole: podpowiedź do bieżącego narzędzia, położenie kursora i stan zapisu.
 
-**Mysz w widoku 3D:**
+**Poruszanie się po mapie:**
 
 - lewy przycisk – narzędzie;
-- prawy – obrót widoku; Shift + prawy albo środkowy – przesuwanie;
-- kółko – przybliżanie.
+- prawy – obrót widoku;
+- przesuwanie widoku: środkowy przycisk, Shift + prawy, **spacja + lewy** albo **strzałki** (z Shiftem szybciej);
+- kółko – przybliżanie w stronę kursora;
+- **minimapa** w prawym dolnym rogu pokazuje całą mapę i żółty obrys tego, co widzisz. Kliknij albo przeciągnij po niej, żeby przenieść kamerę;
+- **F** – wyśrodkuj na zaznaczonych obiektach, **Home** – pokaż całą mapę.
 
-Klawisz **F1** (albo **?**) pokazuje wszystkie skróty.
+Klawisz **?** (albo **F1**) otwiera ściągę ze wszystkimi skrótami. Każde narzędzie ma swój skrót w dymku i małą literę w rogu przycisku. Skróty nie działają podczas pisania w polach tekstowych.
 
 ### Teren
 
 1. Zakładka **Teren** (albo klawisz **B**).
-2. Wybierz pędzel: **Podnieś, Obniż, Wygładź, Wyrównaj, Szum** (klawisze 1–5). Ustaw rozmiar (klawisze `[` i `]`), siłę i miękkość krawędzi.
+2. Wybierz pędzel: **Podnieś, Obniż, Wygładź, Wyrównaj, Szum** (klawisze 1–5). Ustaw rozmiar (klawisze `[` i `]`), siłę (Shift + `[` / `]`) i miękkość krawędzi.
 3. Przytrzymaj lewy przycisk i maluj po terenie:
    - **Shift** odwraca podnoszenie i obniżanie;
    - **Ctrl + klik** pobiera wysokość dla pędzla „Wyrównaj”.
@@ -70,7 +73,7 @@ Klawisz **F1** (albo **?**) pokazuje wszystkie skróty.
 
 ### Obiekty
 
-1. Zakładka **Obiekty**: kliknij typ w palecie, potem kliknij teren. Obiekt przyklei się do powierzchni. Możesz klikać dalej, żeby wstawiać kolejne. **Esc** kończy wstawianie.
+1. Zakładka **Obiekty**: kliknij typ w palecie, potem kliknij teren. Obiekt przyklei się do powierzchni. Możesz klikać dalej, żeby wstawiać kolejne. **Esc** kończy wstawianie, a klawisz **O** wraca do wstawiania ostatnio wybranego typu.
 2. **Ścieżki i strefy** (np. „Trasa wozu”, „Obszar”) rysujesz punkt po punkcie:
    - **Enter** albo dwuklik kończy rysowanie;
    - **Backspace** cofa ostatni punkt;
@@ -89,15 +92,27 @@ Klawisz **F1** (albo **?**) pokazuje wszystkie skróty.
    - **Delete** usuwa.
 6. **Punkty ścieżki lub strefy:** zaznacz ją i przeciągaj białe kropki. Dwuklik przy linii dodaje punkt, a Alt + klik albo Delete usuwa zaznaczony punkt.
 7. **Właściwości** (panel po prawej) pochodzą ze schematu: liczby, teksty, listy, tak/nie, kolory i odwołania do innych obiektów (np. generator → jego obszar). Pola z błędem są czerwone.
-8. **Lista** (zakładka po lewej):
-   - wyszukiwanie i filtr typu;
-   - grupy (**Ctrl + G**);
-   - ukrywanie (👁, klawisz **H**) i blokowanie (🔒, klawisz **L**), także całych grup;
-   - dwuklik na pozycji pokazuje obiekt.
+8. **Lista** (zakładka po lewej) to drzewo grup:
+   - **Ctrl + G** zamyka zaznaczone obiekty (i całe zaznaczone grupy) w nowej grupie; grupy mogą mieć podgrupy. **Ctrl + Shift + G** rozgrupowuje;
+   - ▾ / ▸ zwija i rozwija grupę, a jej nazwę zmienisz, klikając ją;
+   - **przeciąganie:** obiekt albo grupę upuść na grupę (trafi do środka), na obiekt (stanie przed nim) albo na pole na dole listy (wyjdzie z grup);
+   - kliknięcie grupy zaznacza całą jej zawartość. Wtedy uchwyty przesuwają, obracają i skalują wszystkie obiekty naraz, a **Ctrl + C / Ctrl + V / Ctrl + D** kopiują grupę razem z podgrupami (przycisk ⧉ duplikuje grupę od razu);
+   - ukrywanie (👁, klawisz **H**; **Shift + H** pokazuje wszystko) i blokowanie (🔒, **Shift + L**) działa także na całe grupy z podgrupami;
+   - wyszukiwanie i filtr typu; dwuklik na pozycji pokazuje obiekt.
+   Grupy zapisują się w pliku mapy, ale służą tylko do porządku – gra ich nie używa.
+
+### Kolizje rysowane
+
+W zakładce **Obiekty** (sekcja „Kolizje (edytor)”) i na pasku narzędzi są dwa narzędzia. Działają z każdym schematem gry:
+
+- **Lasso kolizji** (klawisz **L**): przytrzymaj lewy przycisk i obrysuj obszar, do którego nie można wejść (np. jezioro, gęsty las). Po puszczeniu powstaje czerwony obszar. Jego punkty możesz przeciągać jak punkty strefy. Suwak „Wygładzanie lassa” zaokrągla kształt przy rysowaniu, a przyciski **Wygładź** i **Uprość** w panelu właściwości poprawiają go później.
+- **Linia kolizji** (klawisz **K**): klikaj punkty jak przy ścieżce (Enter albo dwuklik kończy). Powstaje ściana wzdłuż linii, np. brzeg klifu albo rzeki. **Grubość** ustawisz w panelu właściwości.
+
+Obie są widoczne tylko w edytorze (znikają w „Widoku gry”). Przy zapisie trafiają do pliku mapy razem ze ścianami kolizji i maską stromych zboczy.
 
 ### Podgląd i sprawdzanie
 
-- **Widok gry** (klawisz **C**) ustawia kamerę jak w grze i ukrywa obiekty widoczne tylko w edytorze (np. niewidzialne ściany). Ponowne kliknięcie wraca do swobodnej kamery.
+- **Widok gry** (klawisz **V**) ustawia kamerę jak w grze i ukrywa obiekty widoczne tylko w edytorze (np. niewidzialne ściany). Ponowne kliknięcie wraca do swobodnej kamery.
 - **Sprawdzanie mapy** (prawy dolny panel) działa na bieżąco i pokazuje błędy (⛔) oraz ostrzeżenia (⚠) według zasad schematu, np. „dokładnie jeden start gracza”. Kliknięcie problemu przenosi do obiektu.
 - **Ctrl + Z / Ctrl + Y** cofa i ponawia każdą zmianę, także pociągnięcia pędzlem.
 
@@ -113,8 +128,8 @@ Klawisz **F1** (albo **?**) pokazuje wszystkie skróty.
 Zapisany plik zawiera wszystko, czego gra potrzebuje:
 
 - teren, warstwy i obiekty;
-- ścieżki, strefy i ściany kolizji;
-- maskę stromych zboczy;
+- ścieżki, strefy, ściany kolizji i kolizje rysowane (lasso, linie);
+- maskę nieprzechodniości (strome zbocza i wszystkie kolizje);
 - powierzchnie, po których można chodzić (np. mosty).
 
 Opis dla programistów gry: [docs/formaty.md](docs/formaty.md).

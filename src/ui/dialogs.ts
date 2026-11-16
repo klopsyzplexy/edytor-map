@@ -1,6 +1,7 @@
 // Okna dialogowe: komunikat, potwierdzenie, nowa mapa, pomoc, toasty.
 import { t } from '../i18n';
 import { h } from './dom';
+import { cheatSheet } from './shortcuts';
 
 export function modal(title: string, body: Node, buttons: Array<{ label: string; primary?: boolean; value: string }>, wide = false): Promise<string | null> {
   return new Promise((resolve) => {
@@ -88,45 +89,27 @@ export async function newMapDialog(d: NewMapValues): Promise<NewMapValues | null
   };
 }
 
-export const SHORTCUTS: Array<[string, string]> = [
-  ['Q', 'sc.select'],
-  ['W / E / R', 'sc.transform'],
-  ['B', 'sc.sculpt'],
-  ['P', 'sc.paint'],
-  ['1 – 5', 'sc.heightTools'],
-  ['[ / ]', 'sc.brushSize'],
-  ['Shift', 'sc.invert'],
-  ['Ctrl + klik', 'sc.pickHeight'],
-  ['Esc', 'sc.escape'],
-  ['Enter', 'sc.finish'],
-  ['Backspace', 'sc.undoPoint'],
-  ['Alt + klik', 'sc.deleteVertex'],
-  ['Ctrl + Z', 'sc.undo'],
-  ['Ctrl + Y / Ctrl + Shift + Z', 'sc.redo'],
-  ['Ctrl + C / Ctrl + V', 'sc.copyPaste'],
-  ['Ctrl + D', 'sc.duplicate'],
-  ['Delete', 'sc.delete'],
-  ['Ctrl + A', 'sc.selectAll'],
-  ['Ctrl + G', 'sc.group'],
-  ['H', 'sc.hide'],
-  ['L', 'sc.lock'],
-  ['G', 'sc.ground'],
-  ['F', 'sc.focus'],
-  ['X', 'sc.snap'],
-  ['C', 'sc.gameView'],
-  ['Ctrl + S', 'sc.save'],
-  ['Ctrl + O', 'sc.open'],
-  ['F1 / ?', 'sc.help'],
-];
-
+/** Ściąga skrótów (klawisz ? albo F1) – treść z ui/shortcuts.ts. */
 export async function helpDialog(): Promise<void> {
-  const table = h(
-    'table',
-    { class: 'shortcuts' },
-    ...SHORTCUTS.map(([k, key]) => h('tr', {}, h('td', {}, h('kbd', {}, k.replace('klik', t('sc.click')))), h('td', {}, t(key)))),
+  const sections = cheatSheet().map((sec) =>
+    h(
+      'section',
+      { class: 'sc-section' },
+      h('h3', {}, sec.title),
+      h('table', { class: 'shortcuts' }, ...sec.rows.map(([k, d]) => h('tr', {}, h('td', {}, h('kbd', {}, k)), h('td', {}, d)))),
+    ),
   );
   const mouse = h('ul', {}, ...['help.mouse1', 'help.mouse2', 'help.mouse3', 'help.mouse4'].map((k) => h('li', {}, t(k))));
-  const body = h('div', { class: 'help' }, h('h3', {}, t('help.mouse')), mouse, h('h3', {}, t('help.shortcuts')), table, h('p', { class: 'muted' }, t('help.more')));
+  const body = h(
+    'div',
+    { class: 'help' },
+    h('h3', {}, t('help.mouse')),
+    mouse,
+    h('h3', {}, t('help.shortcuts')),
+    h('p', { class: 'muted' }, t('help.shortcutsHint')),
+    h('div', { class: 'sc-grid' }, ...sections),
+    h('p', { class: 'muted' }, t('help.more')),
+  );
   await modal(t('help.title'), body, [{ label: t('btn.close'), primary: true, value: 'ok' }], true);
 }
 

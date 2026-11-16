@@ -6,6 +6,7 @@ import { cellSize, heightAt } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
 import { openBinaryFiles } from '../storage/files';
+import { KEY, tip } from './shortcuts';
 import { validateMap, type Issue } from '../core/validate';
 import { getLang, t } from '../i18n';
 import { clear, h } from './dom';
@@ -65,7 +66,7 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
           { class: `palette-item${st.tool === 'lasso' ? ' active' : ''}`, title: t('builtin.collisionZoneHint'), onclick: () => ctx.setTool('lasso') },
           swatch(BUILTIN_TYPES[0].look.color),
           h('span', { class: 'name' }, t('tool.lasso')),
-          h('kbd', { class: 'kind' }, 'L'),
+          h('span', { class: 'key' }, KEY.lasso),
         ),
         h(
           'button',
@@ -79,7 +80,7 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
           },
           swatch(BUILTIN_TYPES[1].look.color),
           h('span', { class: 'name' }, t('tool.line')),
-          h('kbd', { class: 'kind' }, 'K'),
+          h('span', { class: 'key' }, KEY.line),
         ),
       ),
       slider(t('lasso.smooth'), st.lassoSmooth, 0, 3, 1, (v) => (st.lassoSmooth = v), 'lassoSmooth', t('lasso.smoothHint')),
@@ -105,6 +106,7 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
               swatch(ty.look.color),
               h('span', { class: 'name' }, L(ty.name, ty.id)),
               h('span', { class: 'kind' }, t(`kindShort.${ty.kind}`)),
+              ctx.state.lastPaletteType === ty.id ? h('span', { class: 'key', title: tip(t('tb.placeHint'), 'place') }, KEY.place) : null,
             ),
           ),
         ),
@@ -156,6 +158,7 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
               },
             },
             t(`terrain.tool.${ht}`),
+            h('span', { class: 'key' }, String(k + 1)),
           ),
         ),
       ),
@@ -191,7 +194,7 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
       ),
       h('p', { class: 'muted small' }, t('terrain.sculptHelp')),
 
-      h('h3', {}, t('terrain.stamp'), ' ', h('kbd', {}, 'T')),
+      h('h3', {}, t('terrain.stamp'), ' ', h('kbd', {}, KEY.stamp)),
       h(
         'div',
         { class: 'stamp-list' },
@@ -252,7 +255,7 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
       ),
       h('p', { class: 'muted small' }, t('terrain.stampHelp')),
 
-      h('h3', {}, t('terrain.layers')),
+      h('h3', {}, t('terrain.layers'), ' ', h('kbd', {}, KEY.paint)),
       h(
         'div',
         { class: 'layer-list' },
@@ -399,10 +402,10 @@ export function renderObjectList(root: HTMLElement, ctx: Ctx, ls: ListState, act
       h(
         'div',
         { class: 'list-buttons' },
-        h('button', { title: `${t('list.groupHint')} (Ctrl + G)`, disabled: none, onclick: actions.group }, t('list.group')),
-        h('button', { title: `${t('list.ungroupHint')} (Ctrl + Shift + G)`, disabled: none, onclick: actions.ungroupSelection }, t('list.ungroup')),
-        h('button', { title: 'H', disabled: none, onclick: () => actions.toggleHidden(doc.selection) }, t('list.hide')),
-        h('button', { title: 'Shift + L', disabled: none, onclick: () => actions.toggleLocked(doc.selection) }, t('list.lock')),
+        h('button', { title: tip(t('list.groupHint'), 'group'), disabled: none, onclick: actions.group }, t('list.group')),
+        h('button', { title: tip(t('list.ungroupHint'), 'ungroup'), disabled: none, onclick: actions.ungroupSelection }, t('list.ungroup')),
+        h('button', { title: `${KEY.hide}; ${t('sc.showAll')}: ${KEY.showAll}`, disabled: none, onclick: () => actions.toggleHidden(doc.selection) }, t('list.hide')),
+        h('button', { title: KEY.lock, disabled: none, onclick: () => actions.toggleLocked(doc.selection) }, t('list.lock')),
         h('button', { title: `${t('list.newGroupHint')}`, onclick: actions.newGroup }, t('list.newGroup')),
       ),
       h('p', { class: 'muted small' }, t('list.treeHelp')),
@@ -643,10 +646,10 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
     const buttons = h(
       'div',
       { class: 'list-buttons' },
-      h('button', { title: 'Ctrl + D', onclick: actions.duplicate }, t('props.duplicate')),
-      h('button', { title: 'G', onclick: actions.ground }, t('props.ground')),
-      h('button', { title: 'F', onclick: () => actions.focusObject(ids[0]) }, t('props.focus')),
-      h('button', { class: 'danger', title: 'Delete', onclick: actions.remove }, t('props.delete')),
+      h('button', { title: KEY.duplicate, onclick: actions.duplicate }, t('props.duplicate')),
+      h('button', { title: KEY.ground, onclick: actions.ground }, t('props.ground')),
+      h('button', { title: KEY.focus, onclick: () => actions.focusObject(ids[0]) }, t('props.focus')),
+      h('button', { class: 'danger', title: KEY.delete, onclick: actions.remove }, t('props.delete')),
     );
     if (sel.length > 1) {
       root.append(h('h3', {}, t('props.multi', { n: sel.length })), buttons);

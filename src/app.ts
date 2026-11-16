@@ -24,6 +24,7 @@ import { StampLibrary } from './tools/stamps';
 import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
 import { alertBox, confirmBox, helpDialog, newMapDialog, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
+import { KEY, tip, type KeyId } from './ui/shortcuts';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
 type LeftTab = 'objects' | 'terrain' | 'list';
@@ -440,15 +441,18 @@ export class App implements Ctx {
             else this.doc.select([]);
             return true;
           case 'h':
-            this.actions.toggleHidden(this.doc.selection);
+            if (e.shiftKey) this.showAll();
+            else this.actions.toggleHidden(this.doc.selection);
             return true;
           case 'l':
             if (e.shiftKey) this.actions.toggleLocked(this.doc.selection);
             else this.setTool('lasso');
             return true;
           case 'k':
-            s.placeType = COLLISION_LINE;
-            this.setTool('place');
+            this.drawCollisionLine();
+            return true;
+          case 'o':
+            this.placeLast();
             return true;
           case 'g':
             this.actions.ground();
@@ -463,7 +467,7 @@ export class App implements Ctx {
             s.snap = !s.snap;
             this.stateChanged();
             return true;
-          case 'c':
+          case 'v':
             this.toggleGameView();
             return true;
           case 'f1':
@@ -474,6 +478,35 @@ export class App implements Ctx {
         return false;
       })();
       if (handled) e.preventDefault();
+    });
+  }
+
+  /** O: wstawianie ostatniego typu z palety (bez wyboru – zakładka Obiekty). */
+  private placeLast(): void {
+    const s = this.state;
+    const last = s.lastPaletteType && this.doc.schema.objectTypes.some((x) => x.id === s.lastPaletteType) ? s.lastPaletteType : null;
+    if (!last) {
+      this.leftTab = 'objects';
+      this.renderLeft();
+      toast(t('toast.pickType'));
+      return;
+    }
+    s.placeType = last;
+    this.setTool('place');
+  }
+
+  private drawCollisionLine(): void {
+    this.state.placeType = COLLISION_LINE;
+    this.setTool('place');
+  }
+
+  /** Shift + H: pokazuje wszystkie ukryte obiekty i grupy (jeden krok cofania). */
+  private showAll(): void {
+    const d = this.doc;
+    if (!d.map.objects.some((o) => o.hidden) && !d.map.groups.some((g) => g.hidden)) return;
+    d.transact('show-all', () => {
+      for (const o of d.map.objects) o.hidden = false;
+      for (const g of d.map.groups) g.hidden = false;
     });
   }
 
@@ -807,8 +840,14 @@ export class App implements Ctx {
     const s = this.state;
     const tb = this.el.toolbar;
     clear(tb);
-    const btn = (label: string, title: string, onclick: () => void, active = false, disabled = false) =>
-      h('button', { class: active ? 'active' : '', title, onclick, disabled }, label);
+    /** Przycisk paska; `key` – skrót pokazany w dymku i małą literą w rogu. */
+    const btn = (label: string, title: string, onclick: () => void, active = false, disabled = false, key?: KeyId) =>
+      h(
+        'button',
+        { class: `${active ? 'active' : ''}${key && KEY[key].length === 1 ? ' has-key' : ''}`, title: key ? tip(title, key) : title, onclick, disabled },
+        label,
+        key && KEY[key].length === 1 ? h('span', { class: 'key' }, KEY[key]) : null,
+      );
     const menu = (label: string, items: Array<[string, string, () => void] | null>) => {
       const d = h('details', { class: 'menu' }, h('summary', {}, label));
       const list = h('div', { class: 'menu-list' });
@@ -845,18 +884,23 @@ export class App implements Ctx {
         [t('menu.downloadModels'), '', () => this.downloadModels()],
       ]),
       h('span', { class: 'sep' }),
-      btn('↶', `${t('tb.undo')} (Ctrl+Z)`, () => this.doc.undo(), false, !this.doc.history.canUndo),
-      btn('↷', `${t('tb.redo')} (Ctrl+Y)`, () => this.doc.redo(), false, !this.doc.history.canRedo),
+      btn('↶', t('tb.undo'), () => this.doc.undo(), false, !this.doc.history.canUndo, 'undo'),
+      btn('↷', t('tb.redo'), () => this.doc.redo(), false, !this.doc.history.canRedo, 'redo'),
       h('span', { class: 'sep' }),
-      btn(t('tb.select'), `${t('tb.selectHint')} (Q)`, () => this.setTool('select'), s.tool === 'select' && false),
-      btn(t('tb.move'), `${t('tb.moveHint')} (W)`, () => this.setTransform('translate'), s.tool === 'select' && s.transformMode === 'translate'),
-      btn(t('tb.rotate'), `${t('tb.rotateHint')} (E)`, () => this.setTransform('rotate'), s.tool === 'select' && s.transformMode === 'rotate'),
-      btn(t('tb.scale'), `${t('tb.scaleHint')} (R)`, () => this.setTransform('scale'), s.tool === 'select' && s.transformMode === 'scale'),
+      btn(t('tb.select'), t('tb.selectHint'), () => this.setTool('select'), false, false, 'select'),
+      btn(t('tb.move'), t('tb.moveHint'), () => this.setTransform('translate'), s.tool === 'select' && s.transformMode === 'translate', false, 'translate'),
+      btn(t('tb.rotate'), t('tb.rotateHint'), () => this.setTransform('rotate'), s.tool === 'select' && s.transformMode === 'rotate', false, 'rotate'),
+      btn(t('tb.scale'), t('tb.scaleHint'), () => this.setTransform('scale'), s.tool === 'select' && s.transformMode === 'scale', false, 'scale'),
       h('span', { class: 'sep' }),
-      btn(t('tb.sculpt'), `${t('tb.sculptHint')} (B)`, () => this.setTool('sculpt'), s.tool === 'sculpt'),
-      btn(t('tb.paint'), `${t('tb.paintHint')} (P)`, () => this.setTool('paint'), s.tool === 'paint'),
+      btn(t('tb.sculpt'), `${t('tb.sculptHint')} (${KEY.heightTools}, ${KEY.sculpt})`, () => this.setTool('sculpt'), s.tool === 'sculpt'),
+      btn(t('tb.stamp'), t('tb.stampHint'), () => this.setTool('stamp'), s.tool === 'stamp', false, 'stamp'),
+      btn(t('tb.paint'), t('tb.paintHint'), () => this.setTool('paint'), s.tool === 'paint', false, 'paint'),
       h('span', { class: 'sep' }),
-      btn(t('tb.grid'), `${t('tb.gridHint')} (X)`, () => ((s.snap = !s.snap), this.stateChanged()), s.snap),
+      btn(t('tb.place'), t('tb.placeHint'), () => this.placeLast(), s.tool === 'place' && s.placeType !== COLLISION_LINE, false, 'place'),
+      btn(t('tb.lasso'), t('tb.lassoHint'), () => this.setTool('lasso'), s.tool === 'lasso', false, 'lasso'),
+      btn(t('tb.line'), t('tb.lineHint'), () => this.drawCollisionLine(), s.tool === 'place' && s.placeType === COLLISION_LINE, false, 'line'),
+      h('span', { class: 'sep' }),
+      btn(t('tb.grid'), t('tb.gridHint'), () => ((s.snap = !s.snap), this.stateChanged()), s.snap, false, 'grid'),
       h('input', {
         class: 'grid-step',
         type: 'number',
@@ -869,7 +913,7 @@ export class App implements Ctx {
           this.stateChanged();
         },
       }),
-      btn(t('tb.gameView'), `${t('tb.gameViewHint')} (C)`, () => this.toggleGameView(), this.gameView),
+      btn(t('tb.gameView'), t('tb.gameViewHint'), () => this.toggleGameView(), this.gameView, false, 'gameView'),
       h('span', { class: 'grow' }),
       h('span', { class: 'doc-title', title: this.fileName ?? '' }, title),
       h(
@@ -877,7 +921,7 @@ export class App implements Ctx {
         { class: 'lang', title: t('tb.language'), onchange: (e: Event) => setLang((e.target as HTMLSelectElement).value as Lang) },
         ...LANGS.map((l) => h('option', { value: l, selected: l === getLang() }, l.toUpperCase())),
       ),
-      btn('?', `${t('tb.help')} (F1)`, () => void helpDialog()),
+      btn('?', `${t('tb.help')} (?, F1)`, () => void helpDialog()),
     );
   }
 }

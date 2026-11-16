@@ -3,7 +3,7 @@ import exampleSchemaRaw from '../examples/schemat-przyklad.json';
 import type { Ctx, EditorState, ToolId, TransformMode } from './context';
 import { EditorDoc } from './core/doc';
 import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/format';
-import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapObject, type Vec3 } from './core/map';
+import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type Schema } from './core/schema';
 import { collectCollision, COLLISION_LINE, rasterizeCollision } from './core/collision';
 import { computeSlopeMask, raycastTerrain } from './core/terrain';
@@ -37,6 +37,8 @@ export class App implements Ctx {
   stamps = new StampLibrary();
   gizmo: Gizmo;
   clipboard: MapObject[] = [];
+  /** Grupy skopiowane w całości razem z obiektami (wklejenie odtwarza ich strukturę). */
+  private clipboardGroups: MapGroup[] = [];
   state: EditorState = {
     tool: 'select',
     transformMode: 'translate',
@@ -393,7 +395,8 @@ export class App implements Ctx {
               this.doc.select(this.doc.map.objects.filter((o) => this.doc.isPickable(o)).map((o) => o.id));
               return true;
             case 'g':
-              this.actions.group();
+              if (e.shiftKey) this.actions.ungroupSelection();
+              else this.actions.group();
               return true;
           }
           return false;
@@ -510,7 +513,15 @@ export class App implements Ctx {
 
   private copy(): void {
     this.clipboard = this.doc.selectedObjects().map(cloneObject);
+    this.clipboardGroups = this.doc.fullGroups(this.doc.selection).map((g) => ({ ...g }));
     if (this.clipboard.length) toast(t('toast.copied', { n: this.clipboard.length }));
+  }
+
+  /** Grupy zaznaczone w całości, bez tych, które leżą w innej takiej grupie. */
+  private topFullGroups(ids: string[]): MapGroup[] {
+    const full = this.doc.fullGroups(ids);
+    const fullIds = new Set(full.map((g) => g.id));
+    return full.filter((g) => !this.doc.groupChain(g.parent).some((p) => fullIds.has(p.id)));
   }
 
   private paste(): void {
@@ -524,7 +535,7 @@ export class App implements Ctx {
     const hit = this.lastHit?.hit;
     const off: Vec3 = hit ? [hit[0] - c[0], 0, hit[2] - c[2]] : [this.state.gridStep, 0, this.state.gridStep];
     const s = this.snap([c[0] + off[0], 0, c[2] + off[2]]);
-    this.doc.pasteObjects(this.clipboard, [s[0] - c[0], 0, s[2] - c[2]]);
+    this.doc.pasteObjects(this.clipboard, [s[0] - c[0], 0, s[2] - c[2]], this.clipboardGroups);
   }
 
   actions: Actions = {
@@ -532,7 +543,29 @@ export class App implements Ctx {
       const sel = this.doc.selectedObjects();
       if (!sel.length) return;
       const step = this.state.snap ? this.state.gridStep : 1;
-      this.doc.pasteObjects(sel, [step, 0, step]);
+      this.doc.pasteObjects(sel, [step, 0, step], this.doc.fullGroups(this.doc.selection));
+    },
+    duplicateGroup: (id) => {
+      const ids = this.doc.groupObjectIds(id);
+      const objs = ids.map((x) => this.doc.getObject(x)!).filter(Boolean);
+      const groups = [...this.doc.groupDescendants(id)].map((g) => this.doc.getGroup(g)!).filter(Boolean);
+      const step = this.state.snap ? this.state.gridStep : 1;
+      if (objs.length) this.doc.pasteObjects(objs, [step, 0, step], groups);
+    },
+    newGroup: () => {
+      this.doc.groupObjects([], t('list.groupName', { n: this.doc.map.groups.length + 1 }), []);
+      this.leftTab = 'list';
+      this.renderLeft();
+    },
+    ungroupSelection: () => {
+      const top = this.topFullGroups(this.doc.selection);
+      if (top.length) {
+        for (const g of top) this.doc.ungroup(g.id);
+        return;
+      }
+      // brak całych grup – wyjmij zaznaczone obiekty poziom wyżej
+      const objs = this.doc.selectedObjects().filter((o) => o.group);
+      for (const o of objs) this.doc.moveToGroup([o.id], [], this.doc.getGroup(o.group)?.parent ?? null);
     },
     remove: () => {
       if (this.doc.selection.length) this.doc.removeObjects(this.doc.selection);
@@ -545,7 +578,12 @@ export class App implements Ctx {
       }, 'ground');
     },
     group: () => {
-      if (this.doc.selection.length) this.doc.groupObjects(this.doc.selection, t('list.groupName', { n: this.doc.map.groups.length + 1 }));
+      if (!this.doc.selection.length) return;
+      // całe zaznaczone grupy trafiają do nowej grupy jako podgrupy, a reszta obiektów – bezpośrednio
+      const top = this.topFullGroups(this.doc.selection);
+      const inTop = new Set(top.flatMap((g) => this.doc.groupObjectIds(g.id)));
+      const loose = this.doc.selection.filter((id) => !inTop.has(id));
+      this.doc.groupObjects(loose, t('list.groupName', { n: this.doc.map.groups.length + 1 }), top.map((g) => g.id));
     },
     ungroup: (id) => this.doc.ungroup(id),
     focusObject: (id) => {

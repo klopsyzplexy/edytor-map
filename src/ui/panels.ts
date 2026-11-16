@@ -1,6 +1,6 @@
 // Panele boczne: paleta obiektów, teren, lista obiektów, właściwości, walidacja.
 import type { Ctx } from '../context';
-import type { MapObject, Vec3 } from '../core/map';
+import type { MapGroup, MapObject, Vec3 } from '../core/map';
 import { BUILTIN_TYPES, COLLISION_LINE, simplify, smoothPoints } from '../core/collision';
 import { cellSize, heightAt } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
@@ -16,6 +16,10 @@ export interface Actions {
   ground(): void;
   group(): void;
   ungroup(groupId: string): void;
+  /** Ctrl + Shift + G: rozgrupowuje zaznaczone grupy (albo wyjmuje zaznaczone obiekty z ich grup). */
+  ungroupSelection(): void;
+  newGroup(): void;
+  duplicateGroup(groupId: string): void;
   focusObject(id: string): void;
   toggleHidden(ids: string[]): void;
   toggleLocked(ids: string[]): void;
@@ -340,7 +344,7 @@ export function renderTerrainPanel(root: HTMLElement, ctx: Ctx): void {
   });
 }
 
-// ---------------- Lista obiektów ----------------
+// ---------------- Lista obiektów (drzewo grup) ----------------
 
 export interface ListState {
   query: string;
@@ -348,10 +352,19 @@ export interface ListState {
   collapsed: Set<string>;
 }
 
+/** Przeciągany element drzewa (obiekty i grupy). */
+interface DragPayload {
+  objects: string[];
+  groups: string[];
+}
+const DRAG_MIME = 'application/x-edytor-map';
+let dragging: DragPayload | null = null;
+
 export function renderObjectList(root: HTMLElement, ctx: Ctx, ls: ListState, actions: Actions, rerenderAll: () => void): void {
   const doc = ctx.doc;
   rerender(root, () => {
     const q = ls.query.trim().toLowerCase();
+    const filtering = !!(q || ls.type);
     const match = (o: MapObject) => {
       if (ls.type && o.type !== ls.type) return false;
       if (!q) return true;
@@ -378,26 +391,73 @@ export function renderObjectList(root: HTMLElement, ctx: Ctx, ls: ListState, act
         },
       },
       h('option', { value: '' }, t('list.allTypes')),
-      ...doc.schema.objectTypes.map((ty) => h('option', { value: ty.id, selected: ls.type === ty.id }, L(ty.name, ty.id))),
+      ...[...doc.schema.objectTypes, ...BUILTIN_TYPES].map((ty) => h('option', { value: ty.id, selected: ls.type === ty.id }, L(ty.name, ty.id))),
     );
+    const none = doc.selection.length === 0;
     root.append(
       h('div', { class: 'list-tools' }, search, filter),
       h(
         'div',
         { class: 'list-buttons' },
-        h('button', { title: 'Ctrl + G', disabled: doc.selection.length === 0, onclick: actions.group }, t('list.group')),
-        h('button', { title: 'H', disabled: doc.selection.length === 0, onclick: () => actions.toggleHidden(doc.selection) }, t('list.hide')),
-        h('button', { title: 'L', disabled: doc.selection.length === 0, onclick: () => actions.toggleLocked(doc.selection) }, t('list.lock')),
+        h('button', { title: `${t('list.groupHint')} (Ctrl + G)`, disabled: none, onclick: actions.group }, t('list.group')),
+        h('button', { title: `${t('list.ungroupHint')} (Ctrl + Shift + G)`, disabled: none, onclick: actions.ungroupSelection }, t('list.ungroup')),
+        h('button', { title: 'H', disabled: none, onclick: () => actions.toggleHidden(doc.selection) }, t('list.hide')),
+        h('button', { title: 'Shift + L', disabled: none, onclick: () => actions.toggleLocked(doc.selection) }, t('list.lock')),
+        h('button', { title: `${t('list.newGroupHint')}`, onclick: actions.newGroup }, t('list.newGroup')),
       ),
+      h('p', { class: 'muted small' }, t('list.treeHelp')),
     );
 
-    const row = (o: MapObject) => {
+    // --- przeciąganie ---
+    const payloadFor = (kind: 'object' | 'group', id: string): DragPayload => {
+      if (kind === 'group') return { objects: [], groups: [id] };
+      return doc.selection.includes(id) ? { objects: [...doc.selection], groups: [] } : { objects: [id], groups: [] };
+    };
+    const dragSource = (el: HTMLElement, kind: 'object' | 'group', id: string) => {
+      el.draggable = true;
+      el.addEventListener('dragstart', (e) => {
+        dragging = payloadFor(kind, id);
+        e.dataTransfer?.setData(DRAG_MIME, JSON.stringify(dragging));
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        e.stopPropagation();
+      });
+      el.addEventListener('dragend', () => {
+        dragging = null;
+        root.querySelectorAll('.drop-into, .drop-before').forEach((x) => x.classList.remove('drop-into', 'drop-before'));
+      });
+    };
+    /** Cel upuszczenia: do grupy (`into`) albo przed element (`before`) w grupie `parent`. */
+    const dropTarget = (el: HTMLElement, parent: string | null, mode: 'into' | 'before', before?: { kind: 'object' | 'group'; id: string }) => {
+      const cls = mode === 'into' ? 'drop-into' : 'drop-before';
+      el.addEventListener('dragover', (e) => {
+        if (!dragging) return;
+        if (parent && dragging.groups.some((g) => doc.groupDescendants(g).has(parent))) return;
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.add(cls);
+      });
+      el.addEventListener('dragleave', () => el.classList.remove(cls));
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        el.classList.remove(cls);
+        const p = dragging;
+        dragging = null;
+        if (!p) return;
+        // kolejność zmienia się tylko wśród elementów tego samego rodzaju
+        const b = before && ((before.kind === 'object' && p.objects.length) || (before.kind === 'group' && p.groups.length)) ? before : undefined;
+        if (!doc.moveToGroup(p.objects, p.groups, parent, b)) ctx.toast(t('list.cantMove'), 'error');
+      });
+    };
+
+    const objRow = (o: MapObject, depth: number) => {
       const ty = getType(doc.schema, o.type);
       const selected = doc.selection.includes(o.id);
-      return h(
+      const el = h(
         'div',
         {
           class: `list-row${selected ? ' selected' : ''}${o.hidden ? ' dim' : ''}`,
+          style: `padding-left:${4 + depth * 14}px`,
           onclick: (e: MouseEvent) => doc.select([o.id], e.shiftKey || e.ctrlKey || e.metaKey ? 'toggle' : 'set'),
           ondblclick: () => actions.focusObject(o.id),
           title: t('list.rowHint'),
@@ -408,37 +468,64 @@ export function renderObjectList(root: HTMLElement, ctx: Ctx, ls: ListState, act
         h('span', { class: 'name' }, o.name),
         h('span', { class: 'type' }, L(ty?.name, o.type)),
       );
+      dragSource(el, 'object', o.id);
+      dropTarget(el, o.group && doc.getGroup(o.group) ? o.group : null, 'before', { kind: 'object', id: o.id });
+      return el;
     };
 
     const list = h('div', { class: 'list' });
     const LIMIT = 500;
     let shown = 0;
-    for (const g of doc.map.groups) {
-      const members = doc.map.objects.filter((o) => o.group === g.id && match(o));
-      if (!members.length && (q || ls.type)) continue;
-      const open = !ls.collapsed.has(g.id);
-      list.append(
-        h(
-          'div',
-          { class: `list-group${g.hidden ? ' dim' : ''}` },
-          h('button', { class: 'icon', onclick: () => (open ? ls.collapsed.add(g.id) : ls.collapsed.delete(g.id), rerenderAll()) }, open ? '▾' : '▸'),
-          h('button', { class: `icon${g.hidden ? ' off' : ''}`, title: t('list.hide'), onclick: () => doc.updateGroup(g.id, { hidden: !g.hidden }) }, g.hidden ? '◌' : '👁'),
-          h('button', { class: `icon${g.locked ? '' : ' off'}`, title: t('list.lock'), onclick: () => doc.updateGroup(g.id, { locked: !g.locked }) }, g.locked ? '🔒' : '🔓'),
-          h('input', {
-            class: 'group-name',
-            value: g.name,
-            'data-key': `g-${g.id}`,
-            onchange: (e: Event) => doc.updateGroup(g.id, { name: (e.target as HTMLInputElement).value || g.name }),
-          }),
-          h('button', { class: 'link', title: t('list.selectGroupHint'), onclick: () => doc.select(doc.map.objects.filter((o) => o.group === g.id).map((o) => o.id)) }, t('list.selectGroup')),
-          h('button', { class: 'link', onclick: () => actions.ungroup(g.id) }, t('list.ungroup')),
-        ),
+    const objectsIn = (gid: string | null) => doc.map.objects.filter((o) => (gid ? o.group === gid : !o.group || !doc.getGroup(o.group)));
+    const hasMatch = (gid: string) => doc.groupObjectIds(gid).some((id) => match(doc.getObject(id)!));
+
+    const groupNode = (g: MapGroup, depth: number) => {
+      if (filtering && !hasMatch(g.id)) return;
+      const open = filtering || !ls.collapsed.has(g.id);
+      const content = doc.groupObjectIds(g.id);
+      const allSelected = content.length > 0 && content.every((id) => doc.selection.includes(id));
+      const nameInput = h('input', {
+        class: 'group-name',
+        value: g.name,
+        'data-key': `g-${g.id}`,
+        title: t('list.renameHint'),
+        onclick: (e: Event) => e.stopPropagation(),
+        onchange: (e: Event) => doc.updateGroup(g.id, { name: (e.target as HTMLInputElement).value || g.name }),
+      });
+      const row = h(
+        'div',
+        {
+          class: `list-group${g.hidden ? ' dim' : ''}${allSelected ? ' selected' : ''}`,
+          style: `padding-left:${depth * 14}px`,
+          title: t('list.selectGroupHint'),
+          onclick: (e: MouseEvent) => doc.select(content, e.shiftKey || e.ctrlKey || e.metaKey ? 'add' : 'set'),
+          ondblclick: () => content.length && actions.focusObject(content[0]),
+        },
+        h('button', { class: 'icon', title: open ? t('list.collapse') : t('list.expand'), onclick: (e: Event) => (e.stopPropagation(), open ? ls.collapsed.add(g.id) : ls.collapsed.delete(g.id), rerenderAll()) }, open ? '▾' : '▸'),
+        h('button', { class: `icon${g.hidden ? ' off' : ''}`, title: t('list.hide'), onclick: (e: Event) => (e.stopPropagation(), doc.updateGroup(g.id, { hidden: !g.hidden })) }, g.hidden ? '◌' : '👁'),
+        h('button', { class: `icon${g.locked ? '' : ' off'}`, title: t('list.lock'), onclick: (e: Event) => (e.stopPropagation(), doc.updateGroup(g.id, { locked: !g.locked })) }, g.locked ? '🔒' : '🔓'),
+        h('span', { class: 'folder' }, '▤'),
+        nameInput,
+        h('span', { class: 'count' }, String(content.length)),
+        h('button', { class: 'icon', title: t('list.duplicateGroup'), onclick: (e: Event) => (e.stopPropagation(), actions.duplicateGroup(g.id)) }, '⧉'),
+        h('button', { class: 'icon', title: t('list.ungroupThis'), onclick: (e: Event) => (e.stopPropagation(), actions.ungroup(g.id)) }, '⊗'),
       );
-      if (open) for (const o of members) if (shown++ < LIMIT) list.append(h('div', { class: 'indent' }, row(o)));
-    }
-    for (const o of doc.map.objects) if ((!o.group || !doc.map.groups.some((g) => g.id === o.group)) && match(o) && shown++ < LIMIT) list.append(row(o));
+      dragSource(row, 'group', g.id);
+      dropTarget(row, g.id, 'into');
+      list.append(row);
+      if (!open) return;
+      for (const child of doc.map.groups.filter((x) => x.parent === g.id)) groupNode(child, depth + 1);
+      for (const o of objectsIn(g.id)) if (match(o) && shown++ < LIMIT) list.append(objRow(o, depth + 1));
+    };
+
+    for (const g of doc.map.groups.filter((x) => !x.parent || !doc.getGroup(x.parent))) groupNode(g, 0);
+    for (const o of objectsIn(null)) if (match(o) && shown++ < LIMIT) list.append(objRow(o, 0));
     if (shown > LIMIT) list.append(h('p', { class: 'muted small' }, t('list.more', { n: shown - LIMIT })));
-    if (!doc.map.objects.length) list.append(h('p', { class: 'muted small' }, t('list.empty')));
+    if (!doc.map.objects.length && !doc.map.groups.length) list.append(h('p', { class: 'muted small' }, t('list.empty')));
+    // upuszczenie w puste miejsce listy – najwyższy poziom
+    const rootDrop = h('div', { class: 'list-root-drop' }, t('list.dropRoot'));
+    dropTarget(rootDrop, null, 'into');
+    list.append(rootDrop);
     root.append(list);
   });
 }

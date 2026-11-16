@@ -259,7 +259,7 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
   - `@collision-zone` – obszar nieprzechodni narysowany lassem: wielokąt w `points` (jak strefa);
   - `@collision-line` – ściana wzdłuż łamanej w `points` (jak ścieżka), z grubością `props.width` w jednostkach mapy.
 
-  Obie są widoczne tylko w edytorze. Gra nie musi czytać tych obiektów: ich kształty są w `derived.collision` (3.8) i w masce `derived.blocked` (3.5).
+  Obie są widoczne tylko w edytorze. Gra nie musi czytać tych obiektów: ich kształty są w `derived.collision` (3.7) i w masce `derived.blocked` (3.5).
 
 ### 3.4. Grupy
 
@@ -270,7 +270,7 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
 Maska ma tę samą siatkę co teren: `nx · nz` bajtów, base64. `255` oznacza „nie można przejść”, a `0` – „można przejść”. Edytor zapisuje ją, gdy jest w niej cokolwiek do oznaczenia. Punkt siatki ma `255`, jeśli:
 
 - w mapie włączono „Oznacz zbyt strome zbocza” (`settings.slope.enabled`) i zbocze w tym punkcie jest bardziej strome niż `settings.slope.maxDeg`. Nachylenie liczymy z różnic wysokości sąsiednich punktów;
-- punkt leży w którymkolwiek kształcie z `derived.collision` (3.8): w obszarze lassa, w pasie linii kolizji albo w obrysie obiektu z `flags.collision`.
+- punkt leży w którymkolwiek kształcie z `derived.collision` (3.7): w obszarze lassa, w pasie linii kolizji albo w obrysie obiektu z `flags.collision`.
 
 Wchodzenie pod górę nie zmienia szybkości; gra używa maski tylko jako „przejść / nie przejść”. Dokładność maski to oczko siatki terenu. Gdy gra potrzebuje dokładniejszych kształtów, bierze je z `derived.collision`.
 
@@ -283,7 +283,7 @@ Dla każdego obiektu typu z `flags.walkable = true` edytor zapisuje trójkąty w
 
 Gra liczy wysokość ruchu jako **najwyższą z terenu i powierzchni chodliwych** pod postacią.
 
-### 3.8. Kształty kolizji (`derived.collision`)
+### 3.7. Kształty kolizji (`derived.collision`)
 
 Lista wszystkich kolizji w mapie, w układzie mapy na ziemi `(x, z)`:
 
@@ -300,6 +300,6 @@ Skąd się biorą kształty:
 - `@collision-line` → `line` z grubością `props.width`;
 - obiekty typów z `flags.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła → `polygon` – obrys widziany z góry (otoczka wypukła bryły po obrocie i skali; dla modelu – pudełko `defaultSize`).
 
-### 3.7. Co edytor robi z `derived` przy wczytywaniu
+### 3.8. Co edytor robi z `derived` przy wczytywaniu
 
 Sekcja `derived` to dane pochodne dla gry. Przy wczytywaniu edytor ją pomija i liczy od nowa przy kolejnym zapisie. Dzięki temu nie może się rozjechać z resztą mapy. Wszystko inne wraca bez strat: zapis → odczyt → zapis daje identyczny plik (sprawdzają to testy w `tests/format.test.ts`).

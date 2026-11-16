@@ -153,3 +153,11 @@ label.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; curso
 .stamp-list button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 3px; font-size: 11px; overflow: hidden; }
 .stamp-list img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 3px; background: #000; }
 .stamp-list span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-group.selected { background: var(--accent2); border-radius: 4px; }
+.list-group .folder { color: var(--muted); padding: 0 2px; }
+.list-group .count { color: var(--muted); font-size: 11px; padding: 0 4px; }
+.list-group, .list-row { cursor: pointer; }
+.drop-into { outline: 2px dashed var(--accent); outline-offset: -2px; border-radius: 4px; }
+.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.list-root-drop { margin-top: 8px; padding: 8px; border: 1px dashed var(--line); border-radius: 5px; color: var(--muted); font-size: 11px; text-align: center; }
+.list-root-drop.drop-into { color: var(--text); }

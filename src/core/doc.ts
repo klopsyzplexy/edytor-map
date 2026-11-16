@@ -231,8 +231,8 @@ export class EditorDoc {
    * Nowa grupa z zaznaczonych obiektów i grup. Trafia tam, gdzie wszystkie zaznaczone elementy
    * mają wspólnego rodzica (albo na najwyższy poziom).
    */
-  groupObjects(ids: string[], name: string, groupIds: string[] = []): MapGroup | null {
-    if (!ids.length && !groupIds.length) return null;
+  groupObjects(ids: string[], name: string, groupIds: string[] = []): MapGroup {
+    // bez zawartości powstaje pusta grupa na najwyższym poziomie
     const parents = new Set<string | null>([...ids.map((id) => this.getObject(id)?.group ?? null), ...groupIds.map((id) => this.getGroup(id)?.parent ?? null)]);
     const parent = parents.size === 1 ? [...parents][0] : null;
     const g: MapGroup = { id: newId('g'), name, parent: groupIds.includes(parent ?? '') ? null : parent, hidden: false, locked: false };

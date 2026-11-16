@@ -491,6 +491,8 @@ export class LassoTool implements Tool {
     }
     doc.addObject(COLLISION_ZONE, [0, 0, 0], pts);
     this.ctx.toast(t('toast.lassoDone', { n: pts.length }));
+    // jak po narysowaniu ścieżki: zaznaczanie, żeby od razu można było przeciągać punkty
+    this.ctx.setTool('select');
   }
 
   key(e: KeyboardEvent): boolean {

@@ -105,7 +105,7 @@ Klawisz **?** (albo **F1**) otwiera ściągę ze wszystkimi skrótami. Każde na
 
 W zakładce **Obiekty** (sekcja „Kolizje (edytor)”) i na pasku narzędzi są dwa narzędzia. Działają z każdym schematem gry:
 
-- **Lasso kolizji** (klawisz **L**): przytrzymaj lewy przycisk i obrysuj obszar, do którego nie można wejść (np. jezioro, gęsty las). Po puszczeniu powstaje czerwony obszar. Jego punkty możesz przeciągać jak punkty strefy. Suwak „Wygładzanie lassa” zaokrągla kształt przy rysowaniu, a przyciski **Wygładź** i **Uprość** w panelu właściwości poprawiają go później.
+- **Lasso kolizji** (klawisz **L**): przytrzymaj lewy przycisk i obrysuj obszar, do którego nie można wejść (np. jezioro, gęsty las). Po puszczeniu powstaje czerwony obszar, a edytor wraca do zaznaczania. Punkty obszaru możesz od razu przeciągać jak punkty strefy. Suwak „Wygładzanie lassa” zaokrągla kształt przy rysowaniu, a przyciski **Wygładź** i **Uprość** w panelu właściwości poprawiają go później.
 - **Linia kolizji** (klawisz **K**): klikaj punkty jak przy ścieżce (Enter albo dwuklik kończy). Powstaje ściana wzdłuż linii, np. brzeg klifu albo rzeki. **Grubość** ustawisz w panelu właściwości.
 
 Obie są widoczne tylko w edytorze (znikają w „Widoku gry”). Przy zapisie trafiają do pliku mapy razem ze ścianami kolizji i maską stromych zboczy.

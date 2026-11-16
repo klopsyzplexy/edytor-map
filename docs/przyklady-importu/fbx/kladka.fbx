@@ -1,0 +1,40 @@
+; FBX 7.3.0 project file
+FBXHeaderExtension:  {
+	FBXHeaderVersion: 1003
+	FBXVersion: 7300
+}
+GlobalSettings:  {
+	Version: 1000
+	Properties70:  {
+		P: "UpAxis", "int", "Integer", "",1
+		P: "UnitScaleFactor", "double", "Number", "",1
+	}
+}
+Objects:  {
+	Geometry: 100, "Geometry::skrzynka", "Mesh" {
+		Vertices: *72 {
+			a: -2,1,-1,-2,1,1,2,1,1,2,1,-1,-2,0,1,-2,0,-1,2,0,-1,2,0,1,2,0,-1,2,1,-1,2,1,1,2,0,1,-2,0,1,-2,1,1,-2,1,-1,-2,0,-1,2,0,1,2,1,1,-2,1,1,-2,0,1,-2,0,-1,-2,1,-1,2,1,-1,2,0,-1
+		}
+		PolygonVertexIndex: *24 {
+			a: 0,1,2,-4,4,5,6,-8,8,9,10,-12,12,13,14,-16,16,17,18,-20,20,21,22,-24
+		}
+		GeometryVersion: 124
+	}
+	Model: 200, "Model::skrzynka", "Mesh" {
+		Version: 232
+		Properties70:  {
+		}
+	}
+	Material: 300, "Material::czerwony", "" {
+		Version: 102
+		ShadingModel: "phong"
+		Properties70:  {
+			P: "DiffuseColor", "Color", "", "A",0.85,0.2,0.15
+		}
+	}
+}
+Connections:  {
+	C: "OO",100,200
+	C: "OO",300,200
+	C: "OO",200,0
+}

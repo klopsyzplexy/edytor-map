@@ -17,6 +17,8 @@ import { Minimap } from './render/minimap';
 import { importModelFiles, zipModels } from './render/modelImport';
 import { ModelLibrary } from './render/models';
 import { ObjectsView } from './render/objectsView';
+import { PlayMode } from './render/playMode';
+import { findStart } from './core/play';
 import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
 import { loadAutosave, writeAutosave } from './storage/autosave';
@@ -70,6 +72,8 @@ export class App implements Ctx {
   private minimap: Minimap;
   /** Wciśnięte strzałki (przesuwanie kamery) i spacja (przesuwanie myszą). */
   private held = new Set<string>();
+  /** Tryb „zagraj tę mapę”. */
+  private play: PlayMode;
 
   // elementy interfejsu
   private el = {
@@ -103,16 +107,20 @@ export class App implements Ctx {
     this.minimap = new Minimap(() => this.doc, this.viewport, t('minimap.hint'));
     this.el.view.append(this.minimap.el);
     this.gizmo = new Gizmo(this.viewport, () => this.doc, () => this.objects);
+    this.play = new PlayMode(this, this.el.view, (game, guides) => this.objects.setGameView(game || this.gameView, guides, !game), () => this.afterPlay());
     this.models.onChange = () => this.objects?.sync();
     this.stamps.onChange = () => {
       if (this.doc) this.stateChanged();
     };
     this.viewport.onTick((time, dt) => {
       this.terrain?.tick(time);
-      this.panWithKeys(dt);
+      if (this.play.active) this.play.tick(dt);
+      else {
+        this.panWithKeys(dt);
+        this.tools?.[this.state.tool].tick?.(dt);
+      }
       if (this.doc) this.minimap.tick();
       this.objects?.tick(this.viewport.camera);
-      this.tools?.[this.state.tool].tick?.(dt);
     });
     this.bindPointer();
     this.bindKeys();
@@ -193,6 +201,7 @@ export class App implements Ctx {
   }
 
   private onMapReplaced(): void {
+    if (this.play?.active) this.play.stop();
     if (this.terrain) {
       this.viewport.root.remove(this.terrain.group);
       this.terrain.dispose();
@@ -245,7 +254,7 @@ export class App implements Ctx {
   }
 
   refreshHint(): void {
-    const text = this.tools[this.state.tool].hint();
+    const text = this.play.active ? t('play.controls') : this.tools[this.state.tool].hint();
     this.el.hint.textContent = text;
     this.el.statusHint.textContent = text;
   }
@@ -275,17 +284,19 @@ export class App implements Ctx {
     c.addEventListener('pointerdown', (e) => {
       c.focus();
       this.lastHit = null;
+      if (this.play.active) return this.play.pointerDown(e);
       if (this.held.has(' ')) return;
       this.tools[this.state.tool].down?.(e);
     });
     c.addEventListener('pointermove', (e) => {
       this.lastHit = null;
-      this.tools[this.state.tool].move?.(e);
+      if (this.play.active) this.play.pointerMove(e);
+      else this.tools[this.state.tool].move?.(e);
       const hit = this.terrainHit(e);
       this.el.statusCursor.textContent = hit ? t('status.cursor', { x: hit[0].toFixed(2), z: hit[2].toFixed(2), h: hit[1].toFixed(2) }) : '';
     });
-    window.addEventListener('pointerup', (e) => this.tools[this.state.tool].up?.(e));
-    c.addEventListener('dblclick', (e) => this.tools[this.state.tool].dblclick?.(e));
+    window.addEventListener('pointerup', (e) => (this.play.active ? this.play.pointerUp(e) : this.tools[this.state.tool].up?.(e)));
+    c.addEventListener('dblclick', (e) => !this.play.active && this.tools[this.state.tool].dblclick?.(e));
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerleave', () => {
       if (this.state.tool === 'sculpt' || this.state.tool === 'paint' || this.state.tool === 'stamp') this.terrain.setBrush(0, 0, 1, false);
@@ -334,16 +345,32 @@ export class App implements Ctx {
   private bindKeys(): void {
     const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
     window.addEventListener('keyup', (e) => {
+      if (this.play.active) this.play.key(e, false);
       this.held.delete(e.key);
       if (e.key === 'Shift') this.held.delete('Shift');
       if (e.key === ' ') this.setSpace(false);
     });
     window.addEventListener('blur', () => {
+      this.play.blur();
       this.held.clear();
       this.setSpace(false);
     });
     window.addEventListener('keydown', (e) => {
       if (document.querySelector('.modal-overlay')) return;
+      // F5 – zagraj od startu, Shift + F5 – spod kursora (także ponownie w trybie gry); nie odświeża strony
+      if (e.key === 'F5' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        this.startPlay(e.shiftKey);
+        return;
+      }
+      if (this.play.active) {
+        // w trybie gry działają tylko klawisze gry; mapa się nie zmienia
+        if (e.key === 'Escape') this.play.stop();
+        else if (!this.play.key(e, true) && !e.ctrlKey && !e.metaKey) return;
+        // Ctrl + … (cofnij, zapisz, wklej…) nie działa w trybie gry
+        e.preventDefault();
+        return;
+      }
       const target = e.target instanceof HTMLElement ? e.target : document.body;
       const typing = target.matches('input:not([type=checkbox]):not([type=range]), textarea, select');
       const mod = e.ctrlKey || e.metaKey;
@@ -515,6 +542,42 @@ export class App implements Ctx {
     this.state.transformMode = mode;
     this.gizmo.setMode(mode);
     this.setTool('select');
+  }
+
+  /** Tryb gry: start z obiektu startowego albo spod kursora. */
+  startPlay(atCursor: boolean): void {
+    const map = this.doc.map;
+    let at: Vec3 | null = null;
+    if (atCursor) {
+      const hit = this.lastHit?.hit;
+      if (!hit) return toast(t('play.noCursor'), 'error');
+      at = [hit[0], NaN, hit[2]];
+    } else {
+      at = findStart(this.doc.schema, map);
+      if (!at) {
+        const ty = this.doc.schema.player.startType;
+        toast(ty ? t('play.noStartObject', { type: ty }) : t('play.noStartType'));
+        at = [map.settings.size[0] / 2, NaN, map.settings.size[1] / 2];
+      }
+    }
+    if (!this.play.active) {
+      this.setTool('select');
+      this.gizmo.enabled = false;
+      this.gizmo.refresh();
+      this.el.view.parentElement?.classList.add('playing');
+    }
+    this.play.start(at);
+    this.renderToolbar();
+    this.refreshHint();
+  }
+
+  private afterPlay(): void {
+    this.el.view.parentElement?.classList.remove('playing');
+    this.gizmo.enabled = true;
+    this.gizmo.refresh();
+    this.applyViewState();
+    this.renderToolbar();
+    this.refreshHint();
   }
 
   private toggleGameView(): void {
@@ -868,6 +931,18 @@ export class App implements Ctx {
       return d;
     };
     const title = (this.doc.map.settings.name || t('newMap.defaultName')) + (this.doc.changes ? ' •' : '');
+    if (this.play.active) {
+      // w trybie gry tylko wyjście i ponowny start – mapa się nie zmienia
+      tb.append(
+        h('span', { class: 'brand' }, t('app.title')),
+        h('button', { class: 'active', title: t('play.exitHint'), onclick: () => this.play.stop() }, t('play.exit')),
+        h('button', { title: tip(t('play.restartHint'), 'play'), onclick: () => this.startPlay(false) }, t('play.restart')),
+        h('span', { class: 'muted small' }, t('play.toolbarHint')),
+        h('span', { class: 'grow' }),
+        h('span', { class: 'doc-title' }, title),
+      );
+      return;
+    }
     tb.append(
       h('span', { class: 'brand', title: t('app.title') }, t('app.title')),
       menu(t('menu.file'), [
@@ -912,6 +987,7 @@ export class App implements Ctx {
         },
       }),
       btn(t('tb.gameView'), t('tb.gameViewHint'), () => this.toggleGameView(), this.gameView, false, 'gameView'),
+      h('button', { class: 'play-btn', title: `${t('tb.playHint')} (${KEY.play}; ${KEY.playCursor} – ${t('tb.playCursor')})`, onclick: () => this.startPlay(false) }, t('tb.play')),
       h('span', { class: 'grow' }),
       h('span', { class: 'doc-title', title: this.fileName ?? '' }, title),
       h(

@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { EditorDoc } from '../core/doc';
 import type { MapObject } from '../core/map';
+import { isBuiltinType } from '../core/builtinTypes';
 import { objectModel } from '../core/objectModel';
 import { getType, type ObjectTypeDef } from '../core/schema';
 import type { ModelLibrary } from './models';
@@ -39,8 +40,17 @@ export class ObjectsView {
     this.group.add(this.handles);
   }
 
-  setGameView(on: boolean): void {
+  private guides = false;
+
+  /**
+   * Widok gry: obiekty z `visibleInGame = false` znikają. `guides` (tryb gry, nakładka) pokazuje mimo to
+   * strefy i ścieżki ze schematu; `helpers = false` chowa obrysy zaznaczenia i uchwyty.
+   */
+  setGameView(on: boolean, guides = false, helpers = true): void {
     this.gameView = on;
+    this.guides = guides;
+    this.selectionBoxes.visible = helpers;
+    this.handles.visible = helpers;
     this.sync(true);
   }
 
@@ -54,7 +64,8 @@ export class ObjectsView {
     for (const o of this.doc.map.objects) {
       seen.add(o.id);
       const t = getType(this.doc.schema, o.type);
-      const visible = this.doc.isVisible(o) && !(this.gameView && t && !t.flags.visibleInGame);
+      const guide = this.guides && !!t && (t.kind === 'path' || t.kind === 'zone') && !isBuiltinType(t.id);
+      const visible = this.doc.isVisible(o) && !(this.gameView && t && !t.flags.visibleInGame && !guide);
       const m = objectModel(this.doc.schema, o, t);
       const sig = JSON.stringify([o.type, o.position, o.rotation, o.scale, o.points, visible, m, m ? this.models.state(m.ref) : 0]);
       const cur = this.items.get(o.id);

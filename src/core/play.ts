@@ -331,3 +331,15 @@ export function findStart(schema: Schema, map: MapData): Vec3 | null {
   const o = map.objects.find((x) => x.type === t);
   return o ? [...o.position] : null;
 }
+
+/**
+ * Wybór animacji postaci: nazwy ze schematu, a bez nich – po typowych nazwach.
+ * Gdy model ma tylko jedną animację, służy do chodzenia.
+ */
+export function pickAnimations(names: string[], wanted: { idle?: string; walk?: string }): { idle: string | null; walk: string | null } {
+  const find = (want: string | undefined, re: RegExp) =>
+    (want && names.find((n) => n === want)) ?? (want && names.find((n) => n.toLowerCase() === want.toLowerCase())) ?? names.find((n) => re.test(n)) ?? null;
+  const walk = find(wanted.walk, /walk|run|idzie|chod|krok|move|jog/i) ?? (names.length === 1 ? names[0] : null);
+  const idle = find(wanted.idle, /idle|stand|stoi|spocz|rest|breath|wait/i);
+  return { idle: idle === walk ? null : idle, walk };
+}

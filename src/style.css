@@ -168,3 +168,20 @@ label.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; curso
 .toolbar button .key, .tool-grid button .key, .palette-item .key { position: absolute; top: 1px; right: 3px; font-size: 9px; line-height: 1; color: var(--muted); font-weight: 600; pointer-events: none; }
 .toolbar button.active .key, .tool-grid button.active .key { color: #dde; }
 .tool-grid button, .palette-item { position: relative; }
+
+/* Tryb gry („zagraj tę mapę”): panele boczne znikają, widok zajmuje środek */
+.app.playing { grid-template-columns: 0 1fr 0; }
+.app.playing .left, .app.playing .right { display: none; }
+.app.playing .minimap { display: none; }
+.app.playing .view-hint { display: none; }
+.play-btn { background: #2f8f57; border-color: #3ddc84; font-weight: 600; }
+.play-hud { position: absolute; left: 10px; top: 10px; width: 250px; background: #1d2127e6; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; z-index: 5; font-size: 12px; }
+.play-hud .play-title { font-weight: 700; margin-bottom: 2px; }
+.play-hud .stat { display: flex; justify-content: space-between; gap: 8px; padding: 1px 0; font-variant-numeric: tabular-nums; }
+.play-stats { margin: 6px 0; padding: 6px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.play-hud .good { color: var(--good); } .play-hud .warn { color: var(--warn); } .play-hud .bad { color: var(--bad); }
+.play-hud label.check { margin: 3px 0; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 2px 0 4px 20px; }
+.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: 11px; }
+.play-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; }
+.play-label { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 11px; color: #fff; background: #000a; padding: 1px 5px; border-radius: 3px; }

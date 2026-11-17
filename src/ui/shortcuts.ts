@@ -37,6 +37,9 @@ export const KEY = {
   save: 'Ctrl + S',
   open: 'Ctrl + O',
   help: '?',
+  play: 'F5',
+  playCursor: 'Shift + F5',
+  overlays: 'C',
 } as const;
 
 export type KeyId = keyof typeof KEY;
@@ -105,6 +108,18 @@ export function cheatSheet(): Array<{ title: string; rows: Array<[string, string
         [() => t('key.arrows'), 'sc.arrows'],
         [() => `${t('key.space')} + ${t('key.drag')}`, 'sc.spacePan'],
         [KEY.gameView, 'sc.gameView'],
+      ],
+    ],
+    [
+      'sc.sec.play',
+      [
+        [KEY.play, 'sc.play'],
+        [KEY.playCursor, 'sc.playCursor'],
+        [() => `WASD / ${t('key.arrows')}`, 'sc.playMove'],
+        [() => t('sc.clickHold'), 'sc.playMouse'],
+        [() => t('key.wheel'), 'sc.playZoom'],
+        [KEY.overlays, 'sc.playOverlays'],
+        ['Esc', 'sc.playExit'],
       ],
     ],
     [

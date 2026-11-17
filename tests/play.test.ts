@@ -185,3 +185,14 @@ describe('tryb gry: ruch i kolizje', () => {
     expect(r.blockedBy).toBe('edge');
   });
 });
+
+import { pickAnimations } from '../src/core/play';
+
+describe('tryb gry: wybór animacji', () => {
+  it('nazwy ze schematu, potem typowe nazwy, jedna animacja = chodzenie', () => {
+    expect(pickAnimations(['stoi', 'idzie', 'skok'], { idle: 'stoi', walk: 'idzie' })).toEqual({ idle: 'stoi', walk: 'idzie' });
+    expect(pickAnimations(['Armature|Idle', 'Armature|Walk_Cycle'], {})).toEqual({ idle: 'Armature|Idle', walk: 'Armature|Walk_Cycle' });
+    expect(pickAnimations(['Take 001'], {})).toEqual({ idle: null, walk: 'Take 001' });
+    expect(pickAnimations([], {})).toEqual({ idle: null, walk: null });
+  });
+});

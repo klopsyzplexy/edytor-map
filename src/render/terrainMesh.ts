@@ -344,6 +344,14 @@ export class TerrainMesh {
     }
   }
 
+  /** Tryb gry: pokazuje na terenie podaną maskę nieprzechodniości (null – wyłącza). */
+  setBlockedOverlay(mask: Uint8Array | null): void {
+    this.material.uniforms.uSlopeOn.value = mask ? 1 : 0;
+    if (!mask) return;
+    (this.blocked.image.data as Uint8Array).set(mask);
+    this.blocked.needsUpdate = true;
+  }
+
   private updateSlope(r: Rect): void {
     const { nx } = this.map.terrain;
     const data = this.blocked.image.data as Uint8Array;

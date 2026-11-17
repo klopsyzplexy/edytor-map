@@ -2,6 +2,7 @@
 // Wewnętrznie każdy model to .glb; inne formaty zamienia import (modelImport.ts).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { Vec3 } from '../core/map';
 import { fileStem, modelFormat } from '../core/modelFiles';
 import type { Box3 } from '../core/objectModel';
@@ -11,7 +12,7 @@ export type ModelState = 'loading' | 'ready' | 'error';
 
 export class ModelLibrary {
   private loader = new GLTFLoader();
-  private cache = new Map<string, { state: ModelState; scene?: THREE.Group }>();
+  private cache = new Map<string, { state: ModelState; scene?: THREE.Group; animations?: THREE.AnimationClip[] }>();
   /** Modele wczytane przez użytkownika (nazwa bez rozszerzenia → adres blob z danymi .glb). */
   private files = new Map<string, string>();
   /** Dane .glb modeli (klucz: nazwa.glb) – do zapisu roboczego i pobrania. */
@@ -35,12 +36,12 @@ export class ModelLibrary {
   }
 
   /** Wczytuje model: najpierw spośród wskazanych plików, potem spod adresu (inne formaty niż .glb są zamieniane). */
-  private async load(ref: string): Promise<THREE.Group> {
+  private async load(ref: string): Promise<{ scene: THREE.Group; animations: THREE.AnimationClip[] }> {
     const local = this.files.get(fileStem(ref));
-    if (local) return (await this.loader.loadAsync(local)).scene;
+    if (local) return this.loader.loadAsync(local);
     const fmt = modelFormat(ref);
-    if (fmt && fmt !== 'glb') return (await this.loader.parseAsync(await importModelFromUrl(ref), '')).scene;
-    return (await this.loader.loadAsync(ref)).scene;
+    if (fmt && fmt !== 'glb') return this.loader.parseAsync(await importModelFromUrl(ref), '');
+    return this.loader.loadAsync(ref);
   }
 
   state(ref: string): ModelState {
@@ -53,8 +54,8 @@ export class ModelLibrary {
     if (!c) {
       this.cache.set(ref, { state: 'loading' });
       this.load(ref).then(
-        (scene) => {
-          this.cache.set(ref, { state: 'ready', scene });
+        ({ scene, animations }) => {
+          this.cache.set(ref, { state: 'ready', scene, animations });
           this.onChange();
         },
         () => {
@@ -64,7 +65,13 @@ export class ModelLibrary {
       );
       return null;
     }
-    return c.scene ? c.scene.clone(true) : null;
+    return c.scene ? cloneSkinned(c.scene) : null;
+  }
+
+  /** Kopia modelu z animacjami (postać w trybie gry) albo null, dopóki się wczytuje. */
+  animated(ref: string): { object: THREE.Object3D; clips: THREE.AnimationClip[] } | null {
+    const object = this.instance(ref);
+    return object ? { object, clips: this.cache.get(ref)?.animations ?? [] } : null;
   }
 
   /** Pudełko modelu w jego własnym układzie (null, dopóki się nie wczyta). */

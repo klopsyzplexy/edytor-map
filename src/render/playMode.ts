@@ -3,18 +3,19 @@
 import * as THREE from 'three';
 import type { Ctx } from '../context';
 import { collectCollision, COLLISION_LINE, COLLISION_ZONE, type CollisionShape } from '../core/collision';
-import { heightAt, modelBaseScale, type Vec3 } from '../core/map';
+import { heightAt, modelBaseScale, objectCenter, type Vec3 } from '../core/map';
 import { withBaseScale } from '../core/objectModel';
 import { buildPlayWorld, pickAnimations, slopeDegAt, spawnAt, stepPlayer, type PlayerState, type PlayWorld, type StepResult } from '../core/play';
 import { getType, locText } from '../core/schema';
 import { raycastTerrain } from '../core/terrain';
 import { collectWalkable } from '../core/walkable';
+import { buildTriggers, TriggerState, zonesAt, type Trigger, type TriggerEvent } from '../core/triggers';
 import { getLang, t } from '../i18n';
 import { clear, h } from '../ui/dom';
 
 const D2R = Math.PI / 180;
 /** Kolory nakładki kolizji (legenda w panelu). */
-export const OVERLAY_COLORS = { zone: '#ff4d4d', line: '#ff8a3d', object: '#e040fb', mask: '#f21f1a', walkable: '#3ddc84' };
+export const OVERLAY_COLORS = { zone: '#ff4d4d', line: '#ff8a3d', object: '#e040fb', mask: '#f21f1a', walkable: '#3ddc84', teleport: '#38e1ff' };
 const MAX_LABELS = 120;
 
 export interface Overlays {
@@ -48,6 +49,16 @@ export class PlayMode {
   private hudTimer = 0;
   private hud = h('div', { class: 'play-hud' });
   private labels = h('div', { class: 'play-labels' });
+  /** Przejścia i strefy z komunikatem (zachowania typów ze schematu). */
+  private triggers: Trigger[] = [];
+  private trig: TriggerState | null = null;
+  /** Przyciemnienie ekranu przy przejściu: czas od początku i punkt docelowy. */
+  private fade: { time: number; to: Vec3; done: boolean } | null = null;
+  private fadeEl = h('div', { class: 'play-fade' });
+  private messageEl = h('div', { class: 'play-message' });
+  private messageTimer = 0;
+  /** Komunikat w panelu (np. przejście bez celu) i czas, przez jaki jest widoczny. */
+  private notice: { text: string; time: number } | null = null;
   private onWheel = (e: WheelEvent) => {
     if (!this.active) return;
     e.preventDefault();
@@ -74,6 +85,13 @@ export class PlayMode {
     this.shapes = collectCollision(schema, map, (ref) => models.bounds(ref));
     this.world = buildPlayWorld(schema, map, { collision: this.shapes, walkable: collectWalkable(schema, map, (ref) => models.walkableTriangles(ref)) });
     this.state = spawnAt(this.world, at[0], at[2], Number.isFinite(at[1]) ? at[1] + 0.05 : Infinity);
+    this.triggers = buildTriggers(schema, map, (ref) => models.bounds(ref));
+    this.trig = new TriggerState(this.triggers, map);
+    this.fade = null;
+    this.notice = null;
+    this.messageTimer = 0;
+    this.messageEl.style.opacity = '0';
+    this.fadeEl.style.opacity = '0';
     this.last = null;
     this.walkTo = null;
     this.keys.clear();
@@ -85,7 +103,7 @@ export class PlayMode {
       viewport.camera.fov = schema.camera.fovDeg;
       viewport.camera.updateProjectionMatrix();
       viewport.root.add(this.char, this.overlayGroup);
-      this.view.append(this.hud, this.labels);
+      this.view.append(this.hud, this.labels, this.messageEl, this.fadeEl);
       this.distance = schema.camera.distance;
     }
     this.active = true;
@@ -95,6 +113,8 @@ export class PlayMode {
     this.placeCamera();
     this.applyOverlays();
     this.renderHud();
+    // start w strefie z komunikatem pokazuje go od razu; start w przejściu nie przenosi
+    this.handleTriggers(this.trig.update(this.state.pos[0], this.state.pos[2], schema.player.radius, true));
   }
 
   stop(): void {
@@ -104,6 +124,8 @@ export class PlayMode {
     viewport.root.remove(this.char, this.overlayGroup);
     this.hud.remove();
     this.labels.remove();
+    this.messageEl.remove();
+    this.fadeEl.remove();
     this.disposeGroup(this.overlayGroup);
     this.mixer?.stopAllAction();
     this.mixer = null;
@@ -221,8 +243,12 @@ export class PlayMode {
       this.fps.time = 0;
     }
     if (this.charModelRef === null && this.ctx.doc.schema.player.model && this.ctx.models.state(this.ctx.doc.schema.player.model) === 'ready') this.buildCharacter();
-    const dir = this.inputDir();
+    // w trakcie przejścia postać stoi
+    const dir: [number, number] = this.fade ? [0, 0] : this.inputDir();
     this.last = stepPlayer(this.world, this.state, dir, dt);
+    if (this.fade) this.tickFade(dt);
+    else if (this.trig) this.handleTriggers(this.trig.update(this.state.pos[0], this.state.pos[2], this.world.player.radius));
+    this.tickMessages(dt);
     // cel kliknięcia nieosiągalny (np. za ścianą) – po chwili postać się zatrzymuje
     if (this.walkTo && !this.last.moved) {
       this.stuck += dt;
@@ -242,6 +268,64 @@ export class PlayMode {
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.2;
       this.updateStats();
+    }
+  }
+
+  // ---------- przejścia i strefy z komunikatem ----------
+
+  private handleTriggers(events: TriggerEvent[]): void {
+    for (const e of events) {
+      if (e.type === 'teleport') {
+        this.fade = { time: 0, to: e.to, done: false };
+        this.walkTo = null;
+        this.keys.clear();
+        this.mouse.down = false;
+      } else if (e.type === 'noTarget') {
+        const o = this.ctx.doc.getObject(e.trigger.objectId);
+        this.notice = { text: t('play.noTarget', { name: o?.name ?? e.trigger.objectId }), time: 4 };
+        this.updateStats();
+      } else this.showMessage(e.type === 'enter' ? e.trigger.text : t('play.zoneLeave', { text: e.trigger.text }), e.type === 'enter');
+    }
+  }
+
+  /** Przyciemnienie: 0,25 s do czerni, przeniesienie, 0,25 s z powrotem. */
+  private tickFade(dt: number): void {
+    const f = this.fade!;
+    const HALF = 0.25;
+    f.time += dt;
+    if (!f.done && f.time >= HALF) {
+      f.done = true;
+      this.state = spawnAt(this.world, f.to[0], f.to[2], f.to[1] + this.world.player.stepHeight + 0.05);
+      const p = this.state.pos;
+      this.heading = this.state.heading;
+      this.camTarget.set(p[0], p[1] + this.world.player.height * 0.5, p[2]);
+      this.syncChar(1);
+      this.handleTriggers(this.trig!.update(p[0], p[2], this.world.player.radius, true));
+    }
+    const k = f.time < HALF ? f.time / HALF : Math.max(0, 1 - (f.time - HALF) / HALF);
+    this.fadeEl.style.opacity = String(k);
+    if (f.time >= HALF * 2) {
+      this.fade = null;
+      this.fadeEl.style.opacity = '0';
+    }
+  }
+
+  private showMessage(text: string, enter: boolean): void {
+    this.messageEl.textContent = text;
+    this.messageEl.classList.toggle('leave', !enter);
+    this.messageEl.style.opacity = '1';
+    this.messageTimer = 2.5;
+  }
+
+  private tickMessages(dt: number): void {
+    if (this.messageTimer > 0) {
+      this.messageTimer -= dt;
+      // ostatnie pół sekundy – wygaszanie
+      this.messageEl.style.opacity = String(Math.min(1, Math.max(0, this.messageTimer / 0.5)));
+    }
+    if (this.notice) {
+      this.notice.time -= dt;
+      if (this.notice.time <= 0) this.notice = null;
     }
   }
 
@@ -336,6 +420,7 @@ export class PlayMode {
     this.setObjectsMode(true, on && this.overlays.guides);
     this.ctx.terrain.setBlockedOverlay(on && this.overlays.collision ? this.world.terrainMask : null);
     if (on && this.overlays.collision) this.buildCollisionOverlay();
+    if (on && this.overlays.guides) this.buildTeleportArrows();
     clear(this.labels);
     this.labels.style.display = on && this.overlays.names ? '' : 'none';
   }
@@ -414,6 +499,40 @@ export class PlayMode {
     }
   }
 
+  /** Przejścia: łuk ze strzałką od przejścia do celu. */
+  private buildTeleportArrows(): void {
+    const map = this.ctx.doc.map;
+    const color = OVERLAY_COLORS.teleport;
+    for (const tr of this.triggers) {
+      if (tr.kind !== 'teleport' || !tr.target) continue;
+      const from = this.ctx.doc.getObject(tr.objectId);
+      const to = this.ctx.doc.getObject(tr.target);
+      if (!from || !to) continue;
+      const a = new THREE.Vector3(...objectCenter(from));
+      const b = new THREE.Vector3(...objectCenter(to));
+      a.y = heightAt(map, a.x, a.z) + 0.3;
+      b.y = heightAt(map, b.x, b.z) + 0.3;
+      const len = a.distanceTo(b);
+      const mid = a.clone().add(b).multiplyScalar(0.5);
+      mid.y += Math.max(1.5, len * 0.25);
+      // łuk odsunięty w bok (w prawo od kierunku), żeby dwa przejścia w obie strony się nie nakładały
+      const side = new THREE.Vector3(-(b.z - a.z), 0, b.x - a.x).normalize().multiplyScalar(len * 0.12);
+      mid.add(side);
+      const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+      const pts = curve.getPoints(48);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true }));
+      line.renderOrder = 8;
+      const tip = pts[pts.length - 1];
+      const dir = tip.clone().sub(pts[pts.length - 4]).normalize();
+      const size = Math.max(0.4, Math.min(2, len * 0.05));
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(size * 0.4, size, 12), new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true }));
+      cone.position.copy(tip).addScaledVector(dir, -size / 2);
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      cone.renderOrder = 8;
+      this.overlayGroup.add(line, cone);
+    }
+  }
+
   /** Nazwy obiektów nad nimi (najbliższe kamerze, w kadrze). */
   private updateLabels(): void {
     const { doc, viewport } = this.ctx;
@@ -480,6 +599,7 @@ export class PlayMode {
           ? h('div', { class: 'legend-row' }, sw(OVERLAY_COLORS.zone, t('play.lgZone')), sw(OVERLAY_COLORS.line, t('play.lgLine')), sw(OVERLAY_COLORS.object, t('play.lgObject')), sw(OVERLAY_COLORS.mask, t('play.lgMask')), sw(OVERLAY_COLORS.walkable, t('play.lgWalkable')))
           : null,
         check('guides', t('play.ovGuides')),
+        o.guides && this.overlaysOn && this.triggers.some((x) => x.kind === 'teleport') ? h('div', { class: 'legend-row' }, sw(OVERLAY_COLORS.teleport, t('play.lgTeleport'))) : null,
         check('names', t('play.ovNames')),
       ),
     );
@@ -503,7 +623,22 @@ export class PlayMode {
       row(t('play.slope'), `${slope.toFixed(1)}°${slopeOn ? ` / ${map.settings.slope.maxDeg}°` : ` (${t('play.slopeOff')})`}`, slopeOn && slope > map.settings.slope.maxDeg ? 'bad' : ''),
       row(t('play.fps'), this.fps.value ? this.fps.value.toFixed(0) : '…', this.fps.value && this.fps.value < 30 ? 'bad' : ''),
       row(t('play.blocked'), why ? this.blockedText(why) : '—', why ? 'warn' : ''),
+      row(t('play.zones'), this.zonesText() || '—'),
     );
+    if (this.notice) this.stats.append(h('div', { class: 'notice warn' }, this.notice.text));
+  }
+
+  /** Strefy, w których stoi postać: tekst komunikatu albo nazwa obiektu i typ. */
+  private zonesText(): string {
+    const { doc } = this.ctx;
+    const [x, , z] = this.state.pos;
+    return zonesAt(doc.schema, doc.map, x, z)
+      .map((o) => {
+        const tr = this.triggers.find((t) => t.objectId === o.id && t.kind === 'message');
+        const ty = getType(doc.schema, o.type);
+        return tr ? `„${tr.text}”` : `${o.name} (${ty ? locText(ty.name, getLang(), ty.id) : o.type})`;
+      })
+      .join(', ');
   }
 
   private blockedText(why: string): string {

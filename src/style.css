@@ -222,3 +222,8 @@ input.short { width: 64px; }
 .anchor-grid button { width: 26px; height: 22px; padding: 0; font-size: 10px; opacity: 0.45; }
 .anchor-grid button.active { opacity: 1; outline: 2px solid var(--accent, #4f8cff); }
 .form .inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.play-hud .notice { margin-top: 4px; padding: 4px 6px; border-radius: 4px; background: #5a3a0a; }
+.play-hud .stat span:last-child { text-align: right; }
+.play-fade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; z-index: 9; }
+.play-message { position: absolute; left: 50%; top: 18%; transform: translateX(-50%); padding: 10px 22px; border-radius: 8px; background: #000a; color: #fff; font-size: 26px; font-weight: 600; text-shadow: 0 2px 6px #000; opacity: 0; pointer-events: none; z-index: 8; white-space: nowrap; }
+.play-message.leave { font-size: 18px; font-weight: 400; color: #ddd; }

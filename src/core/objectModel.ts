@@ -113,3 +113,27 @@ export function changeObjectType(schema: Schema, o: MapObject, typeId: string): 
 export function changeableTypes(schema: Schema): ObjectTypeDef[] {
   return [getType(schema, DECORATION)!, ...schema.objectTypes.filter((t) => t.kind === 'point' || t.kind === 'solid')];
 }
+
+/**
+ * Wymiary obiektu w jednostkach mapy [X, Y, Z] w jego własnym układzie (bez obrotu obiektu): pudełko modelu
+ * po ułożeniu i skali bazowej (gdy `bounds` je zna) albo `defaultSize`, razy mnożnik obiektu (`scale`).
+ */
+export function objectSize(schema: Schema, o: MapObject, map?: Pick<MapData, 'models'>, bounds?: (ref: string) => Box3 | null): Vec3 {
+  const t = getType(schema, o.type);
+  const m = objectModel(schema, o, t, map);
+  const box = m && bounds ? bounds(m.ref) : null;
+  let size: Vec3;
+  if (m && box) {
+    const lo: Vec3 = [Infinity, Infinity, Infinity];
+    const hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+    for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) {
+      const p = modelToObject([x, y, z], m.transform);
+      for (let k = 0; k < 3; k++) {
+        lo[k] = Math.min(lo[k], p[k]);
+        hi[k] = Math.max(hi[k], p[k]);
+      }
+    }
+    size = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]];
+  } else size = [...(t?.defaultSize ?? [1, 1, 1])];
+  return [size[0] * Math.abs(o.scale[0]), size[1] * Math.abs(o.scale[1]), size[2] * Math.abs(o.scale[2])];
+}

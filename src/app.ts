@@ -25,6 +25,7 @@ import { importModelFiles, zipModels } from './render/modelImport';
 import { ModelLibrary } from './render/models';
 import { ObjectsView } from './render/objectsView';
 import { PlayMode } from './render/playMode';
+import { Mannequin } from './render/mannequin';
 import { findStart } from './core/play';
 import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
@@ -35,6 +36,7 @@ import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, typ
 import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, promptBox, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
+import { formatMeters } from './ui/units';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
 type LeftTab = 'objects' | 'terrain' | 'list' | 'library';
@@ -82,6 +84,8 @@ export class App implements Ctx {
   private held = new Set<string>();
   /** Tryb „zagraj tę mapę”. */
   private play: PlayMode;
+  /** Manekin postaci (M). */
+  private mannequin: Mannequin;
 
   // elementy interfejsu
   private el = {
@@ -115,6 +119,8 @@ export class App implements Ctx {
     this.minimap = new Minimap(() => this.doc, this.viewport, t('minimap.hint'));
     this.el.view.append(this.minimap.el);
     this.gizmo = new Gizmo(this.viewport, () => this.doc, () => this.objects);
+    this.mannequin = new Mannequin(() => this.doc, this.models, () => this.objects);
+    this.viewport.root.add(this.mannequin.group);
     this.play = new PlayMode(this, this.el.view, (game, guides) => this.objects.setGameView(game || this.gameView, guides, !game), () => this.afterPlay());
     const libChanged = debounce(() => {
       if (this.leftTab === 'library' && this.doc) this.renderLeft();
@@ -134,6 +140,7 @@ export class App implements Ctx {
         this.tools?.[this.state.tool].tick?.(dt);
       }
       if (this.doc) this.minimap.tick();
+      if (this.doc && !this.play.active) this.mannequin.tick();
       this.objects?.tick(this.viewport.camera);
     });
     this.bindPointer();
@@ -172,6 +179,7 @@ export class App implements Ctx {
   private init(schema: Schema, map: MapData, schemaRaw: unknown): void {
     if (!this.doc) {
       this.doc = new EditorDoc(schema, map, schemaRaw);
+      this.doc.modelDefaults = (ref) => this.models.baseScaleOf(ref);
       this.objects = new ObjectsView(this.doc, this.models);
       this.viewport.root.add(this.objects.group);
       this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this), lasso: new LassoTool(this) };
@@ -314,12 +322,14 @@ export class App implements Ctx {
       if (this.play.active) this.play.pointerMove(e);
       else this.tools[this.state.tool].move?.(e);
       const hit = this.terrainHit(e);
+      this.mannequin.cursor = hit;
       this.el.statusCursor.textContent = hit ? t('status.cursor', { x: hit[0].toFixed(2), z: hit[2].toFixed(2), h: hit[1].toFixed(2) }) : '';
     });
     window.addEventListener('pointerup', (e) => (this.play.active ? this.play.pointerUp(e) : this.tools[this.state.tool].up?.(e)));
     c.addEventListener('dblclick', (e) => !this.play.active && this.tools[this.state.tool].dblclick?.(e));
     c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerleave', () => {
+      this.mannequin.cursor = null;
       if (this.state.tool === 'sculpt' || this.state.tool === 'paint' || this.state.tool === 'stamp') this.terrain.setBrush(0, 0, 1, false);
     });
   }
@@ -519,6 +529,9 @@ export class App implements Ctx {
           case 'v':
             this.toggleGameView();
             return true;
+          case 'm':
+            this.toggleMannequin();
+            return true;
           case 'f1':
           case '?':
             void helpDialog();
@@ -528,6 +541,12 @@ export class App implements Ctx {
       })();
       if (handled) e.preventDefault();
     });
+  }
+
+  /** M: manekin postaci przy kursorze i obok zaznaczenia. */
+  private toggleMannequin(): void {
+    toast(this.mannequin.toggle() ? t('toast.mannequinOn', { h: formatMeters(this.doc.schema.player.height / this.doc.schema.scale.unitsPerMeter) }) : t('toast.mannequinOff'));
+    this.renderToolbar();
   }
 
   /** O: wstawianie ostatniego typu z palety (bez wyboru – zakładka Obiekty). */
@@ -725,6 +744,10 @@ export class App implements Ctx {
     },
     setObjectModel: (ids, model) => this.doc.updateObjects(ids, (o) => (model ? (o.model = model) : delete o.model), 'model'),
     editTypeModel: (typeId) => void this.editTypeModel(typeId),
+    setBaseScale: (ref, v) => {
+      this.doc.setModelBaseScale(ref, v);
+      this.models.setBaseScale(ref, v);
+    },
     toggleLocked: (ids) => {
       const objs = ids.map((id) => this.doc.getObject(id)).filter((o): o is MapObject => !!o);
       if (!objs.length) return;
@@ -1230,6 +1253,7 @@ export class App implements Ctx {
         },
       }),
       btn(t('tb.gameView'), t('tb.gameViewHint'), () => this.toggleGameView(), this.gameView, false, 'gameView'),
+      btn(t('tb.mannequin'), t('tb.mannequinHint'), () => this.toggleMannequin(), this.mannequin.enabled, false, 'mannequin'),
       h('button', { class: 'play-btn', title: `${t('tb.playHint')} (${KEY.play}; ${KEY.playCursor} – ${t('tb.playCursor')})`, onclick: () => this.startPlay(false) }, t('tb.play')),
       h('span', { class: 'grow' }),
       h('span', { class: 'doc-title', title: this.fileName ?? '' }, title),

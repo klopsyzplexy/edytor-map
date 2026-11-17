@@ -2,6 +2,7 @@
 // dzięki czemu działa cofnij/ponów i odświeżanie widoków. Bez DOM i Three.js.
 import { History } from './history';
 import { cloneObject, createObject, modelKey, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Vec3 } from './map';
+import { fileStem } from './modelFiles';
 import { objectModel } from './objectModel';
 import { getType, parseSchema, type Schema } from './schema';
 import { copyRect, pasteRect, unionRect, type Rect } from './terrain';
@@ -123,8 +124,9 @@ export class EditorDoc {
   transact(label: string, fn: () => void, selectAfter?: string[]): void {
     const before = this.snapshot();
     const selBefore = [...this.selection];
+    const refsBefore = this.usedRefs();
     fn();
-    this.fillModelDefaults(new Set(before.objects.map((o) => o.id)));
+    this.fillModelDefaults(refsBefore);
     const after = this.snapshot();
     const selAfter = selectAfter ?? this.selection.filter((id) => this.getObject(id));
     this.history.push({
@@ -143,12 +145,24 @@ export class EditorDoc {
     this.touched();
   }
 
-  /** Nowe obiekty (spoza `known`) z modelem nieznanym mapie dostają skalę bazową z `modelDefaults`. */
+  /** Nazwy plików (bez rozszerzenia) modeli, których używają obiekty mapy. */
+  private usedRefs(): Set<string> {
+    const out = new Set<string>();
+    for (const o of this.map.objects) {
+      const m = objectModel(this.schema, o);
+      if (m) out.add(fileStem(m.ref));
+    }
+    return out;
+  }
+
+  /**
+   * Model, którego mapa wcześniej nie używała (nowy obiekt, zmiana modelu, model przypisany do typu) i którego
+   * skali bazowej mapa nie zna, dostaje skalę z `modelDefaults` (biblioteki) – w tym samym kroku historii.
+   */
   private fillModelDefaults(known: Set<string>): void {
     for (const o of this.map.objects) {
-      if (known.has(o.id)) continue;
       const m = objectModel(this.schema, o);
-      if (!m || modelKey(this.map, m.ref)) continue;
+      if (!m || known.has(fileStem(m.ref)) || modelKey(this.map, m.ref)) continue;
       const base = this.modelDefaults(m.ref);
       if (base !== undefined && base !== 1) this.map.models[m.ref] = { baseScale: base };
     }
@@ -383,16 +397,24 @@ export class EditorDoc {
     if (this.schemaRaw === undefined) throw new Error('Brak surowego schematu – zmiany schematu są niedostępne.');
     const beforeRaw = this.schemaRaw;
     const beforeSchema = this.schema;
+    const beforeModels = structuredClone(this.map.models);
     const afterRaw = fn(structuredClone(beforeRaw));
     const afterSchema = parseSchema(afterRaw);
-    const apply = (raw: unknown, schema: Schema) => {
+    // model przypisany do typu: obiekty tego typu dostają skalę bazową modelu z biblioteki
+    const refsBefore = this.usedRefs();
+    this.schema = afterSchema;
+    this.fillModelDefaults(refsBefore);
+    this.schema = beforeSchema;
+    const afterModels = structuredClone(this.map.models);
+    const apply = (raw: unknown, schema: Schema, models: MapData['models']) => {
       this.schemaRaw = raw;
       this.schema = schema;
+      this.map.models = structuredClone(models);
       syncLayersWithSchema(this.map, schema);
       this.emit('schema');
     };
-    this.history.push({ label, undo: () => apply(beforeRaw, beforeSchema), redo: () => apply(afterRaw, afterSchema) });
-    apply(afterRaw, afterSchema);
+    this.history.push({ label, undo: () => apply(beforeRaw, beforeSchema, beforeModels), redo: () => apply(afterRaw, afterSchema, afterModels) });
+    apply(afterRaw, afterSchema, afterModels);
     this.touched();
   }
 

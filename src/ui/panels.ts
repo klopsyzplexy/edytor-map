@@ -4,8 +4,8 @@ import type { MapGroup, MapObject, Vec3 } from '../core/map';
 import { BUILTIN_TYPES, COLLISION_LINE, DECORATION, simplify, smoothPoints } from '../core/collision';
 import { isBuiltinType } from '../core/builtinTypes';
 import { fileStem } from '../core/modelFiles';
-import { changeableTypes, modelRef, objectFlags, objectModel, sameModel } from '../core/objectModel';
-import { cellSize, heightAt } from '../core/map';
+import { changeableTypes, modelRef, objectFlags, objectModel, objectSize, sameModel } from '../core/objectModel';
+import { cellSize, heightAt, modelBaseScale } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
 import { openBinaryFiles } from '../storage/files';
@@ -13,6 +13,7 @@ import { KEY, tip } from './shortcuts';
 import { validateMap, type Issue } from '../core/validate';
 import { getLang, t } from '../i18n';
 import { clear, h } from './dom';
+import { formatNum } from './units';
 
 export interface Actions {
   duplicate(): void;
@@ -33,6 +34,8 @@ export interface Actions {
   setObjectModel(ids: string[], model: string | undefined): void;
   /** Okno „Model typu” (zmiana zapisuje się w schemacie). */
   editTypeModel(typeId: string): void;
+  /** Skala bazowa modelu (wszystkie kopie na mapie i domyślna w bibliotece). */
+  setBaseScale(ref: string, baseScale: number): void;
 }
 
 const L = (x: Parameters<typeof locText>[0], fb = '') => locText(x, getLang(), fb);
@@ -563,6 +566,23 @@ function vecRow(label: string, v: Vec3, key: string, onChange: (k: number, val: 
   return h('div', { class: 'vec' }, h('span', { class: 'lbl' }, label), ...[0, 1, 2].map((k) => h('label', {}, 'XYZ'[k], numInput(Math.round(v[k] * 1e4) / 1e4, `${key}${k}`, (val) => onChange(k, val), { step }))));
 }
 
+/** Wymiary obiektu w metrach (w dymku – w jednostkach mapy). */
+function sizeRow(ctx: Ctx, o: MapObject): HTMLElement {
+  const doc = ctx.doc;
+  const size = objectSize(doc.schema, o, doc.map, (ref) => ctx.models.bounds(ref));
+  const upm = doc.schema.scale.unitsPerMeter;
+  const m = size.map((v) => formatNum(v / upm)).join(' × ');
+  const u = size.map((v) => formatNum(v)).join(' × ');
+  return h(
+    'p',
+    { class: 'size-row small', title: t('props.sizeUnits', { size: u, upm: formatNum(upm, 4) }) },
+    h('span', { class: 'lbl' }, t('props.size')),
+    ' ',
+    h('b', {}, `${m} m`),
+    h('span', { class: 'muted' }, ` (${t('props.sizeAxes')})`),
+  );
+}
+
 function propField(ctx: Ctx, p: PropDef, objs: MapObject[], issues: Issue[]): HTMLElement {
   const doc = ctx.doc;
   const values = objs.map((o) => o.props[p.id]);
@@ -682,7 +702,8 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
         root.append(
           vecRow(t('props.position'), o.position, 'pos', (k, v) => doc.updateObjects(ids, (x) => (x.position[k] = v), 'move')),
           vecRow(t('props.rotation'), o.rotation, 'rot', (k, v) => doc.updateObjects(ids, (x) => (x.rotation[k] = v), 'rotate'), 5),
-          vecRow(t('props.scale'), o.scale, 'scl', (k, v) => doc.updateObjects(ids, (x) => (x.scale[k] = v || 0.01), 'scale')),
+          vecRow(objectModel(doc.schema, o, ty, doc.map) ? t('props.multiplier') : t('props.scale'), o.scale, 'scl', (k, v) => doc.updateObjects(ids, (x) => (x.scale[k] = v || 0.01), 'scale')),
+          sizeRow(ctx, o),
         );
       } else {
         const closed = ty.kind === 'zone';
@@ -766,6 +787,18 @@ function typeAndModel(ctx: Ctx, sel: MapObject[], ty: ObjectTypeDef, actions: Ac
         { class: 'model-row' },
         h('span', { class: 'muted small grow' }, ty.look.model ? t('props.typeModel', { model: fileStem(ty.look.model) }) : t('props.typeNoModel')),
         h('button', { title: t('props.typeModelHint'), onclick: () => actions.editTypeModel(ty.id) }, t('props.typeModelBtn')),
+      ),
+    );
+  }
+  if (om) {
+    // skala bazowa modelu: wspólna dla wszystkich kopii modelu na mapie (mnożnik obiektu – osobno)
+    const base = modelBaseScale(ctx.doc.map, om.ref);
+    box.append(
+      h(
+        'div',
+        { class: 'field', title: t('props.baseScaleHint') },
+        h('label', {}, t('props.baseScale', { model: fileStem(om.ref) })),
+        numInput(Math.round(base * 1e4) / 1e4, 'baseScale', (v) => v > 0 && actions.setBaseScale(om.ref, v), { min: 0.0001, step: 0.01 }),
       ),
     );
   }

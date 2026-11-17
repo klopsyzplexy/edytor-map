@@ -32,6 +32,7 @@ export const KEY = {
   focus: 'F',
   home: 'Home',
   gameView: 'V',
+  mannequin: 'M',
   grid: 'X',
   ground: 'G',
   save: 'Ctrl + S',
@@ -108,6 +109,7 @@ export function cheatSheet(): Array<{ title: string; rows: Array<[string, string
         [() => t('key.arrows'), 'sc.arrows'],
         [() => `${t('key.space')} + ${t('key.drag')}`, 'sc.spacePan'],
         [KEY.gameView, 'sc.gameView'],
+        [KEY.mannequin, 'sc.mannequin'],
       ],
     ],
     [

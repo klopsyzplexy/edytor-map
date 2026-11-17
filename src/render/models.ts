@@ -19,6 +19,10 @@ export class ModelLibrary {
   readonly fileData = new Map<string, ArrayBuffer>();
   /** Folder modelu w bibliotece (klucz: nazwa.glb; brak = bez folderu). */
   readonly folders = new Map<string, string>();
+  /** Skala bazowa modelu w bibliotece (klucz: nazwa.glb) – domyślna dla map, które jej jeszcze nie mają. */
+  readonly baseScales = new Map<string, number>();
+  /** Kategoria modelu użyta przy normalizacji (klucz: nazwa.glb). */
+  readonly categories = new Map<string, string>();
   /** Licznik zmian pliku modelu (miniatury odświeżają się po podmianie). */
   readonly versions = new Map<string, number>();
   onChange: () => void = () => {};
@@ -44,6 +48,8 @@ export class ModelLibrary {
     this.files.delete(key);
     this.fileData.delete(`${key}.glb`);
     this.folders.delete(`${key}.glb`);
+    this.baseScales.delete(`${key}.glb`);
+    this.categories.delete(`${key}.glb`);
     for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
     this.onChange();
   }
@@ -55,17 +61,42 @@ export class ModelLibrary {
     this.onChange();
   }
 
-  /** Foldery biblioteki do zapisu (plik biblioteka.json w projekcie i zapis roboczy). */
-  libraryJson(): { models: Array<{ file: string; folder?: string }> } {
-    return { models: this.fileNames.map((f) => ({ file: f, ...(this.folders.get(f) ? { folder: this.folders.get(f) } : {}) })) };
+  /** Skala bazowa i kategoria modelu w bibliotece (1 / brak = bez normalizacji). */
+  setBaseScale(name: string, baseScale: number, category?: string): void {
+    const key = `${fileStem(name)}.glb`;
+    if (baseScale === 1) this.baseScales.delete(key);
+    else this.baseScales.set(key, baseScale);
+    if (category) this.categories.set(key, category);
+    else if (category === '') this.categories.delete(key);
+    this.onChange();
+  }
+
+  baseScaleOf(name: string): number | undefined {
+    return this.baseScales.get(`${fileStem(name)}.glb`);
+  }
+
+  /** Foldery, skale bazowe i kategorie biblioteki do zapisu (plik biblioteka.json w projekcie i zapis roboczy). */
+  libraryJson(): { models: Array<{ file: string; folder?: string; baseScale?: number; category?: string }> } {
+    return {
+      models: this.fileNames.map((f) => ({
+        file: f,
+        ...(this.folders.get(f) ? { folder: this.folders.get(f) } : {}),
+        ...(this.baseScales.has(f) ? { baseScale: this.baseScales.get(f) } : {}),
+        ...(this.categories.has(f) ? { category: this.categories.get(f) } : {}),
+      })),
+    };
   }
 
   applyLibraryJson(j: unknown): void {
     const list = typeof j === 'object' && j && Array.isArray((j as { models?: unknown }).models) ? (j as { models: unknown[] }).models : [];
     for (const m of list) {
       if (typeof m !== 'object' || !m) continue;
-      const { file, folder } = m as { file?: unknown; folder?: unknown };
-      if (typeof file === 'string' && typeof folder === 'string' && folder) this.folders.set(`${fileStem(file)}.glb`, folder);
+      const { file, folder, baseScale, category } = m as { file?: unknown; folder?: unknown; baseScale?: unknown; category?: unknown };
+      if (typeof file !== 'string') continue;
+      const key = `${fileStem(file)}.glb`;
+      if (typeof folder === 'string' && folder) this.folders.set(key, folder);
+      if (typeof baseScale === 'number' && baseScale > 0 && baseScale !== 1) this.baseScales.set(key, baseScale);
+      if (typeof category === 'string' && category) this.categories.set(key, category);
     }
     this.onChange();
   }

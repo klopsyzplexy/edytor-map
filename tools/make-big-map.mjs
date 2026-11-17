@@ -161,13 +161,14 @@ for (let n = 0; n < 10; n++) {
 
 const map = {
   format: 'edytor-map',
-  formatVersion: 3,
+  formatVersion: 4,
   editorVersion: pkg.version,
   schema: { id: schema.id, version: schema.version },
   settings: { name: 'Duża mapa (test płynności)', size: [SIZE, SIZE], resolution: [N, N], waterLevel: schema.mapDefaults.waterLevel, slope: { enabled: true, maxDeg: 40 } },
   terrain: { resolution: [N, N], encoding: 'base64', heights: b64(new Uint8Array(heights.buffer)), layers: Object.fromEntries(Object.entries(layers).map(([k, v]) => [k, b64(v)])) },
   groups,
   objects,
+  models: {},
 };
 
 const enc = new TextEncoder();

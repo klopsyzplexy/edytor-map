@@ -100,6 +100,23 @@ Klawisz **?** (albo **F1**) otwiera ściągę ze wszystkimi skrótami. Każde na
    - ukrywanie (👁, klawisz **H**; **Shift + H** pokazuje wszystko) i blokowanie (🔒, **Shift + L**) działa także na całe grupy z podgrupami;
    - wyszukiwanie i filtr typu; dwuklik na pozycji pokazuje obiekt.
    Grupy zapisują się w pliku mapy, ale służą tylko do porządku – gra ich nie używa.
+9. **Losowa wariacja** (pod paletą): gdy jest włączona, każdy wstawiony obiekt (także dekoracja z biblioteki) dostaje losowy mnożnik skali z podanego zakresu (np. 0,8–1,2) i losowy obrót. Przydaje się przy sadzeniu lasu albo rozrzucaniu kamieni.
+
+### Skala świata i proporcje
+
+- Schemat mówi, **ile jednostek mapy to 1 metr** (wzorcem jest postać gracza: 1,8 m). Panel właściwości pokazuje **wymiary** zaznaczonego obiektu w metrach (w dymku – w jednostkach mapy).
+- **Manekin** (klawisz **M** albo przycisk „Manekin”): półprzezroczysta postać w skali gracza przy kursorze i obok zaznaczonego obiektu. Od razu widać, czy drzwi, drzewo albo beczka mają dobry rozmiar.
+- **Skala bazowa modelu i mnożnik obiektu:** skala bazowa należy do modelu – jej zmiana (pole „Skala bazowa modelu” w panelu właściwości) od razu zmienia wszystkie kopie tego modelu na mapie. Każdy obiekt ma jeszcze własny **mnożnik skali** (uchwyt **R** albo pola X/Y/Z).
+- **Normalizacja przy imporcie:** po wgraniu modeli edytor je mierzy i pyta, czym są (postać 1,8 m, drzewo 6–10 m, krzew 1 m, skała, płot, budynek według szerokości podstawy… albo własny rozmiar w metrach), i proponuje skalę bazową. Kategorie i rozmiary może zmienić schemat gry. Później to samo okno otwiera „Skala bazowa (rozmiar w metrach)…” w menu modelu (⋯) w bibliotece.
+
+### Rozmiar mapy
+
+**Mapa → Zmień rozmiar…** – nowa szerokość i długość (w jednostkach albo w procentach) i jeden z dwóch trybów:
+
+- **Rozszerz** – obecny teren zostaje bez zmian, a dookoła powstaje płaski teren z wybraną warstwą. **Kotwica** (środek albo róg) mówi, gdzie zostaje stara część mapy. Obiekty zostają na swoim terenie.
+- **Rozciągnij** – teren i położenia obiektów rozciągają się proporcjonalnie, a obiekty zachowują swój rozmiar.
+
+Gęstość siatki terenu zostaje taka sama; przy bardzo dużej siatce okno ostrzega, że edytor i gra mogą zwolnić. **Ctrl + Z** cofa całą zmianę.
 
 ### Kolizje rysowane
 
@@ -129,13 +146,14 @@ Przycisk **▶ Zagraj** albo **F5** stawia postać w obiekcie startowym (typ wsk
 - **Ruch:** WASD albo strzałki (względem kamery). Kliknięcie na terenie – postać idzie do punktu; przytrzymanie przycisku – idzie w stronę kursora jak joystick. **Kółko** przybliża kamerę w granicach ze schematu.
 - **Kolizje:** postać nie przejdzie przez lasso i linie kolizji, ściany i obiekty z kolizją (także dekoracje), strome zbocza (gdy w mapie włączono „Oznacz zbyt strome zbocza”) ani warstwy nieprzechodnie (np. głęboka woda). Przy ukośnym zderzeniu ślizga się wzdłuż przeszkody. Wchodzi na mosty i inne powierzchnie chodliwe oraz na stopnie do wysokości ze schematu; pod wysokim mostem przechodzi.
 - **Nakładki** (klawisz **C** albo pola w panelu): kolizje kolorami (lasso, linie, obiekty, zbocza i warstwy, powierzchnie chodliwe), strefy i ścieżki, nazwy obiektów.
-- **Panel** w rogu: pozycja postaci, wysokość stóp i terenu, nachylenie, liczba klatek na sekundę i to, co właśnie blokuje ruch.
+- **Panel** w rogu: pozycja postaci, wysokość stóp i terenu, nachylenie, liczba klatek na sekundę, to, co właśnie blokuje ruch, i strefy, w których stoi postać.
+- **Przejścia i komunikaty** (jeśli schemat je ma): wejście w przejście przenosi postać do wskazanego celu (ekran na chwilę gaśnie), a wejście do strefy z komunikatem i wyjście z niej pokazuje na ekranie jej nazwę. Nakładka **C** rysuje strzałkę od przejścia do celu. Przejście bez celu – komunikat w panelu.
 - Postać to kapsuła albo model ze schematu (sekcja `player`) z animacjami „stoi” i „idzie”. Model postaci ustawisz w bibliotece: „Użyj jako… → Model postaci gracza”.
 
 ### Podgląd i sprawdzanie
 
 - **Widok gry** (klawisz **V**) ustawia kamerę jak w grze i ukrywa obiekty widoczne tylko w edytorze (np. niewidzialne ściany). Ponowne kliknięcie wraca do swobodnej kamery.
-- **Sprawdzanie mapy** (prawy dolny panel) działa na bieżąco i pokazuje błędy (⛔) oraz ostrzeżenia (⚠) według zasad schematu, np. „dokładnie jeden start gracza”. Kliknięcie problemu przenosi do obiektu.
+- **Sprawdzanie mapy** (prawy dolny panel) działa na bieżąco i pokazuje błędy (⛔) oraz ostrzeżenia (⚠) według zasad schematu, np. „dokładnie jeden start gracza”, „od 10 do 50 drzew” albo „najwyżej 2 generatory w każdym obszarze”. Każdy komunikat mówi, której zasady dotyczy. Kliknięcie problemu przenosi do obiektu.
 - **Ctrl + Z / Ctrl + Y** cofa i ponawia każdą zmianę, także pociągnięcia pędzlem.
 
 ---
@@ -184,7 +202,7 @@ Edytor wczytuje cztery formaty, ale każdy model od razu zamienia na **.glb**. D
 
 - `npm test` – testy formatu (zapis → odczyt daje to samo), walidacji, terenu i historii.
 - Struktura `src/`:
-  - `core/` – czyste dane i logika bez DOM: schemat, mapa, format pliku, teren, walidacja, historia;
+  - `core/` – czyste dane i logika bez DOM: schemat, mapa, format pliku, teren, walidacja, historia, tryb gry, przejścia, zmiana rozmiaru mapy, normalizacja skali;
   - `render/` – scena Three.js;
   - `tools/` – narzędzia myszy;
   - `ui/` – panele i okna;

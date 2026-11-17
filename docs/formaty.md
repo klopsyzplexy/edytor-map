@@ -16,7 +16,8 @@ Przykład do nauki: [`examples/schemat-przyklad.json`](../examples/schemat-przyk
 - Ziemia to płaszczyzna **X–Z**, wysokość to oś **Y** (jak w Three.js).
 - Mapa zajmuje prostokąt `x ∈ [0, szerokość]`, `z ∈ [0, głębokość]`. Początek układu jest w rogu mapy.
 - Gra 2D (np. Gainer) traktuje współrzędną edytora `(x, z)` jako swoje `(x, y)`.
-- Jednostki są takie same jak w grze. Pole `units` w schemacie służy tylko do wyświetlania.
+- Jednostki mapy są takie same jak w grze. Pole `units` w schemacie służy tylko do wyświetlania.
+- **Skala świata** (od 0.4): schemat mówi, ile jednostek mapy to 1 metr (`scale.unitsPerMeter`, 2.1b). Edytor pokazuje wymiary obiektów w metrach, a rozmiary w schemacie (`defaultSize`, kategorie modeli) podaje się w metrach. Rozmiar mapy i położenia obiektów są zawsze w jednostkach mapy i nie zależą od przelicznika.
 - Obroty zapisujemy w **stopniach**, jako kąty Eulera w kolejności **XYZ**. To ta sama konwencja co `THREE.Euler(x, y, z, 'XYZ')`, czyli macierz `R = Rx · Ry · Rz`.
 
 ---
@@ -30,6 +31,7 @@ Przykład do nauki: [`examples/schemat-przyklad.json`](../examples/schemat-przyk
   "name": { "pl": "Gainer", "en": "Gainer" },
   "version": "1.0",              // wersja schematu nadana przez grę (dowolny napis)
   "units": "m",
+  "scale": { "unitsPerMeter": 1, "categories": [ { "id": "lampa", "name": "Lampa", "size": 3, "measure": "height" } ] },
   "camera": { "pitchDeg": 55, "yawDeg": 0, "distance": 40, "fovDeg": 45, "followSmoothing": 0.15, "minDistance": 15, "maxDistance": 90 },
   "player": { "model": "modele/postac.glb", "radius": 0.4, "height": 1.8, "speed": 6, "stepHeight": 0.4, "startType": "start" },
   "mapDefaults": { "size": [64, 64], "resolution": 129, "height": 0, "waterLevel": 0.4, "slopeMaxDeg": 40 },
@@ -73,10 +75,48 @@ Cała sekcja i wszystkie pola są opcjonalne. Służą tylko do podglądu w edyt
 | `model` | model postaci (jak `look.model`, 2.6); bez modelu edytor pokazuje kapsułę o promieniu `radius` i wysokości `height` | brak |
 | `modelScale`, `modelOffset`, `modelRotation` | ułożenie modelu względem stóp postaci (jak przy typach, 2.6); przód modelu to kierunek +Z | 1, [0,0,0], [0,0,0] |
 | `animations.idle`, `animations.walk` | nazwy animacji „stoi” i „idzie” w modelu. Bez nich edytor szuka animacji po nazwach (`idle`, `stand`, `stoi`… oraz `walk`, `run`, `idzie`…), a gdy jest tylko jedna – używa jej do chodzenia | brak |
-| `radius`, `height` | rozmiar postaci do kolizji (koło o promieniu `radius` na ziemi; `height` decyduje, czy postać mieści się pod mostem) | 0,4 i 1,8 |
-| `speed` | szybkość w jednostkach mapy na sekundę; pod górę bez zmian | 5 |
-| `stepHeight` | najwyższy stopień, na który postać wchodzi (krawężnik, schodek, wejście na most) | 0,35 |
+| `radius`, `height` | rozmiar postaci do kolizji w jednostkach mapy (koło o promieniu `radius` na ziemi; `height` decyduje, czy postać mieści się pod mostem). `height` to wzorzec skali: odpowiada 1,8 m (2.1b) | 0,4 m i 1,8 m × przelicznik |
+| `speed` | szybkość w jednostkach mapy na sekundę; pod górę bez zmian | 5 m/s × przelicznik |
+| `stepHeight` | najwyższy stopień, na który postać wchodzi (krawężnik, schodek, wejście na most) | 0,35 m × przelicznik |
 | `startType` | typ obiektu, w którym postać zaczyna (pierwszy obiekt tego typu w mapie); musi istnieć w `objectTypes` | brak – start na środku mapy |
+
+Model postaci korzysta też ze skali bazowej swojego modelu zapisanej w mapie (`models`, 3.3a).
+
+### 2.1b. Skala świata (`scale`) – od 0.4
+
+```json
+"scale": {
+  "unitsPerMeter": 1,
+  "categories": [
+    { "id": "drzewo", "size": 12 },
+    { "id": "lampa", "name": { "pl": "Lampa", "en": "Lamp" }, "size": 3, "measure": "height" }
+  ]
+}
+```
+
+| Pole | Znaczenie | Domyślnie |
+|---|---|---|
+| `unitsPerMeter` | ile jednostek mapy to 1 metr (np. gra 2D z pikselami: 32) | patrz niżej |
+| `categories` | kategorie modeli do normalizacji przy imporcie: rozmiar docelowy w metrach | kategorie domyślne edytora |
+
+**Skąd przelicznik:** pole `scale.unitsPerMeter`; gdy go nie ma, a schemat podaje `player.height`, przelicznik = `player.height / 1,8` (wzorcem jest postać o wysokości 1,8 m); bez obu – 1. Gdy schemat podaje oba pola, a postać wychodzi według przelicznika wyraźnie inna niż 1,8 m (o ponad 10%), walidacja mapy pokazuje ostrzeżenie.
+
+**Co zależy od przelicznika:** rozmiary prostych brył (`defaultSize` w metrach, 2.4), domyślne rozmiary i szybkość postaci (2.1a), wymiary w metrach w panelu właściwości, proponowana skala modeli przy imporcie. Rozmiar mapy, położenia obiektów i plik mapy – nie.
+
+**Kategorie** (`categories`, każde pole poza `id` opcjonalne): `id`, `name` (tekst; kategorie domyślne mają nazwy w tłumaczeniach edytora), `size` – rozmiar docelowy w metrach, `min` i `max` – zakres w metrach (model w zakresie zostaje bez zmian, poza nim dostaje najbliższą granicę), `measure` – co mierzymy: `height` (wysokość) albo `width` (szerokość podstawy: większy z boków X, Z). Kategoria o `id` takim jak domyślna zastępuje jej pola; nowe `id` dodaje kategorię.
+
+Kategorie domyślne:
+
+| `id` | rozmiar | mierzone |
+|---|---|---|
+| `postac` | 1,8 m | wysokość |
+| `drzewo` | 8 m, zakres 6–10 m | wysokość |
+| `krzew` | 1 m | wysokość |
+| `skala` | 1,5 m | wysokość |
+| `plot` | 1,2 m | wysokość |
+| `budynek` | 10 m | szerokość podstawy |
+
+**Normalizacja przy imporcie:** po wczytaniu modeli edytor mierzy każdy z nich, zgaduje kategorię z nazwy pliku (np. `oak_tree` → drzewo) i proponuje **skalę bazową** = rozmiar docelowy × przelicznik / zmierzony wymiar. Można wybrać inną kategorię, „bez zmian” albo wpisać własny rozmiar w metrach. Skala bazowa należy do modelu (3.3a), a każdy obiekt ma jeszcze własny mnożnik (`scale`). To samo okno otwiera „Skala bazowa (rozmiar w metrach)…” w menu modelu w bibliotece.
 
 ### 2.2. Domyślne ustawienia nowej mapy (`mapDefaults`)
 
@@ -111,7 +151,8 @@ Najwyżej 8 warstw. **Pierwsza warstwa jest podłożem:** nowa mapa jest nią w 
   "defaultSize": [1.5, 1, 1.5],
   "flags": { "collision": true, "visibleInGame": true, "walkable": false },
   "hint": { "pl": "Podpowiedź w palecie", "en": "Palette tooltip" },
-  "properties": [ … ]
+  "properties": [ … ],
+  "behavior": { "type": "teleport", "target": "cel" }
 }
 ```
 
@@ -123,10 +164,29 @@ Najwyżej 8 warstw. **Pierwsza warstwa jest podłożem:** nowa mapa jest nią w 
 | `look.color` | kolor w edytorze (dla ścieżek i stref – kolor linii) |
 | `look.model` | (opcjonalnie) model `.glb` – patrz 2.6 |
 | `look.modelScale`, `look.modelOffset`, `look.modelRotation` | (opcjonalnie) ułożenie modelu względem punktu obiektu – patrz 2.6 |
-| `defaultSize` | rozmiar prostej bryły [X, Y, Z]; podstawa bryły leży na ziemi (y = 0 w układzie obiektu) |
+| `defaultSize` | rozmiar prostej bryły [X, Y, Z] **w metrach** (od 0.4; w jednostkach mapy = `defaultSize` × przelicznik, 2.1b); podstawa bryły leży na ziemi (y = 0 w układzie obiektu). Przy przeliczniku 1 nic się nie zmienia |
 | `flags.collision` | blokuje ruch (informacja dla gry) |
 | `flags.visibleInGame` | `false` = obiekt widoczny tylko w edytorze (np. niewidzialna ściana). W edytorze jest półprzezroczysty, a w „Widoku gry” znika |
 | `flags.walkable` | gracz może po nim chodzić (np. most) – patrz 3.6 |
+| `behavior` | (opcjonalnie, od 0.4) zachowanie w trybie gry – patrz 2.4a |
+
+### 2.4a. Zachowania w trybie gry (`behavior`) – od 0.4
+
+Uniwersalne zachowania, które edytor pokazuje w trybie „zagraj tę mapę”. Gra może je czytać ze schematu i zrobić u siebie po swojemu.
+
+```json
+{ "id": "przejscie", "kind": "point", "behavior": { "type": "teleport", "target": "cel" },
+  "properties": [ { "id": "cel", "name": "Cel", "type": "ref", "refTypes": ["przejscie", "start"] } ] }
+{ "id": "obszar", "kind": "zone", "behavior": { "type": "message", "text": "nazwa" },
+  "properties": [ { "id": "nazwa", "name": "Nazwa", "type": "text" } ] }
+```
+
+| `type` | Pole | Znaczenie |
+|---|---|---|
+| `teleport` (przejście) | `target` – id właściwości typu `ref` | Wejście postaci w obiekt (punkt i bryła: obrys widziany z góry, wystarczy go dotknąć; strefa: jej wielokąt) przenosi postać do obiektu wskazanego tą właściwością (strefa i ścieżka – do środka ich wierzchołków), z krótkim przyciemnieniem ekranu. Przejście w miejscu docelowym nie odsyła postaci od razu z powrotem: działa dopiero po wyjściu z niego i ponownym wejściu. Brak celu: komunikat w panelu trybu gry i ostrzeżenie walidacji. |
+| `message` (strefa z komunikatem) | `text` – id właściwości z tekstem | Tylko dla stref (`kind: "zone"`). Wejście środka postaci do strefy pokazuje na ekranie tekst z tej właściwości (pusty – nazwę obiektu), a wyjście – „Wychodzisz: …”. |
+
+Panel trybu gry pokazuje strefy (wszystkich typów stref), w których stoi postać, a nakładka (C, „Strefy i ścieżki”) rysuje łuk ze strzałką od każdego przejścia do jego celu.
 
 ### 2.5. Właściwości (`properties`)
 
@@ -161,7 +221,7 @@ Edytor szuka modelu w tej kolejności:
 
 Przy wczytywaniu z dysku pliki towarzyszące (`.bin`, `.mtl`, tekstury `.png/.jpg/.webp/.tga…`) dobierane są po nazwie, bez względu na katalogi. Można też wskazać archiwum `.zip`. Gdy czegoś brakuje, edytor pokazuje listę brakujących plików i wczytuje model bez nich (brak `.bin` w `.gltf` uniemożliwia wczytanie). Materiały Phong/Lambert z `.fbx` i `.obj` są zamieniane na materiały PBR glTF (kolor, tekstura, przezroczystość; połysk przybliżony szorstkością).
 
-**Ułożenie modelu** (opcjonalne, w `look`): `modelScale` – liczba albo `[x, y, z]`; `modelRotation` – `[x, y, z]` w stopniach (XYZ); `modelOffset` – `[x, y, z]` w jednostkach mapy. Punkt modelu `p` trafia do układu obiektu jako `offset + R(rotation) · (scale · p)`, a potem działa położenie, obrót i skala obiektu. Edytor ustawia te pola w oknie „Model typu” (przypisanie modelu z biblioteki bez edycji pliku; „Plik → Pobierz schemat” zapisuje zmieniony schemat).
+**Ułożenie modelu** (opcjonalne, w `look`): `modelScale` – liczba albo `[x, y, z]`; `modelRotation` – `[x, y, z]` w stopniach (XYZ); `modelOffset` – `[x, y, z]` w jednostkach mapy. Punkt modelu `p` trafia do układu obiektu jako `offset + R(rotation) · (modelScale · baseScale · p)`, gdzie `baseScale` to skala bazowa modelu z pliku mapy (3.3a, domyślnie 1). Potem działa położenie, obrót i skala (mnożnik) obiektu. Edytor ustawia te pola w oknie „Model typu” (przypisanie modelu z biblioteki bez edycji pliku; „Plik → Pobierz schemat” zapisuje zmieniony schemat).
 
 Model ma własne wymiary, a obiekt mnoży je przez swoją skalę (`defaultSize` dotyczy tylko prostej bryły). Dopóki model się wczytuje albo gdy wczytać się go nie da, edytor pokazuje zastępczą bryłę z `look.shape` i `defaultSize`. Wczytane pliki modeli trafiają do zapisu roboczego w przeglądarce.
 
@@ -175,10 +235,16 @@ Model ma własne wymiary, a obiekt mnoży je przez swoją skalę (`defaultSize` 
 
 | `type` | Znaczenie |
 |---|---|
-| `count` | liczba obiektów typu `objectType` musi mieścić się w `min`…`max` (każde z pól opcjonalne) |
+| `count` | liczebność obiektów typu `objectType`: `exactly` (dokładnie N), `min` (co najmniej N), `max` (co najwyżej N) albo `min` i `max` razem (przedział N–M). Liczby całkowite ≥ 0; `exactly` nie łączy się z `min`/`max`. `min` = `max` oznacza „dokładnie”. Opcjonalne `within` (id typu strefy) – liczba liczona osobno w każdej strefie tego typu (obiekty, których środek leży w strefie), np. „najwyżej 2 generatory w każdym obszarze” |
 | `minDistance` | obiekty `objectType` muszą być od siebie (albo od obiektów `otherType`) dalej niż `distance`; odległość liczona po ziemi, od środków obiektów |
 
-`level`: `error` (błąd) albo `warning` (ostrzeżenie). `message` (opcjonalnie) zastępuje standardowy komunikat.
+```json
+{ "type": "count", "objectType": "skrzynia", "exactly": 3, "level": "error" }
+{ "type": "count", "objectType": "drzewo", "min": 10, "max": 50, "level": "warning" }
+{ "type": "count", "objectType": "generator", "max": 2, "within": "obszar", "level": "warning" }
+```
+
+`level`: `error` (błąd) albo `warning` (ostrzeżenie). `message` (opcjonalnie) zastępuje standardowy komunikat. Komunikat zasady liczebności zawsze kończy się opisem zasady, której dotyczy (np. „– zasada: od 10 do 50 × „Drzewo””, a w strefie: „… w strefie „Polana””). Za mało obiektów: wpis wskazuje strefę (zasada z `within`) albo pierwszy obiekt typu; za dużo: każdy nadmiarowy obiekt osobno.
 
 Poza zasadami ze schematu edytor zawsze sprawdza:
 
@@ -186,10 +252,21 @@ Poza zasadami ze schematu edytor zawsze sprawdza:
 - wartości spoza listy i błędne kolory;
 - odwołania do nieistniejących obiektów albo obiektów złego typu;
 - ścieżki krótsze niż 2 punkty i strefy z mniej niż 3 punktami;
+- przejścia bez celu (2.4a) i niezgodność przelicznika z wysokością postaci (2.1b) – ostrzeżenia;
 - obiekty poza mapą;
 - nieznane typy i warstwy.
 
 Gdy schemat ma błędy, edytor pokazuje ich pełną listę i nie wczytuje go.
+
+---
+
+## 2a. Zmiana rozmiaru mapy (bez zmiany formatu)
+
+„Mapa → Zmień rozmiar…” zmienia `settings.size`, `settings.resolution`, `terrain` i położenia obiektów; kształt pliku zostaje ten sam.
+
+- **Rozszerz:** stary teren zostaje bez zmian w miejscu wyznaczonym przez kotwicę (środek albo róg; przesunięcie wyrównane do oczka siatki), dookoła powstaje płaski teren o wybranej wysokości z wybraną warstwą. Obiekty przesuwają się razem z terenem. Przy zmniejszaniu brzegi terenu są odcinane, a obiekty zostają (walidacja pokaże te poza mapą).
+- **Rozciągnij:** teren i położenia obiektów (także wierzchołki ścieżek i stref) skalują się proporcjonalnie do nowego rozmiaru; rozmiary, obroty i mnożniki obiektów się nie zmieniają.
+- Gęstość siatki terenu zostaje taka sama (oczko o tym samym rozmiarze), chyba że użytkownik poda inną liczbę punktów. Powyżej 1025 × 1025 punktów okno ostrzega o wydajności.
 
 ---
 
@@ -200,8 +277,8 @@ Jeden plik JSON. Przykład w skrócie:
 ```jsonc
 {
   "format": "edytor-map",
-  "formatVersion": 3,
-  "editorVersion": "0.3.0",
+  "formatVersion": 4,
+  "editorVersion": "0.4.0",
   "schema": { "id": "przyklad", "version": "1.0" },
   "settings": {
     "name": "Polana",
@@ -234,6 +311,9 @@ Jeden plik JSON. Przykład w skrócie:
       "position": [12, 1, 30], "rotation": [0, 90, 0], "scale": [1, 1, 1],
       "props": { "collision": true, "walkable": false }, "model": "modele/beczka.glb" }
   ],
+  "models": {
+    "modele/beczka.glb": { "baseScale": 0.5 }
+  },
   "derived": {
     "blocked": "AAAA…",
     "walkable": [ { "objectId": "o3", "type": "most", "triangles": [ … ] } ],
@@ -255,6 +335,7 @@ Jeden plik JSON. Przykład w skrócie:
 | 1 | 0.1.0 | pierwsza wersja |
 | 2 | 0.2.0 | grupy z podgrupami (`groups[].parent`); wbudowane typy kolizji `@collision-zone` i `@collision-line`; sekcja `derived.collision`; `derived.blocked` obejmuje też wszystkie kolizje (3.5). Migracja 1 → 2: każda grupa dostaje `parent: null`. |
 | 3 | 0.3.0 | własny model obiektu (`objects[].model`); wbudowany typ `@decoration`; sekcja `derived.models`; `derived.blocked` obejmuje też warstwy nieprzechodnie. Migracja 2 → 3: bez zmian w danych (nowe pola są opcjonalne). |
+| 4 | 0.4.0 | sekcja `models` – skala bazowa modeli (3.3a); `objects[].scale` to od teraz mnożnik obiektu (dla modelu: razem ze skalą bazową modelu). Migracja 3 → 4: pusta sekcja `models` (skala bazowa 1), więc stare mapy wyglądają tak samo. |
 
 ### 3.2. Teren – dlaczego w tym samym pliku
 
@@ -288,6 +369,8 @@ const decodeU8 = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`, `group` (id grupy albo `null`), `hidden` i `locked` (tylko dla edytora), `position`, `rotation` (stopnie, XYZ), `scale` i `props` (wartości właściwości ze schematu, klucz = id właściwości).
 
+`scale` to **mnożnik obiektu** [X, Y, Z]: dla prostej bryły mnoży `defaultSize` (po przeliczeniu na jednostki mapy), a dla modelu – model po jego skali bazowej (3.3a) i ułożeniu z typu.
+
 - **Punkt i bryła:** `position` to położenie podstawy obiektu. Bryła o rozmiarze `defaultSize × scale` stoi na tym punkcie, obrócona o `rotation`.
 - **Ścieżka i strefa:** `points` to wierzchołki w układzie mapy, w kolejności rysowania. Strefa jest zamknięta: ostatni punkt łączy się z pierwszym. `position`, `rotation` i `scale` są wtedy nieużywane.
 - **Ściany kolizji** to zwykłe obiekty rodzaju `solid` z `flags.collision = true` (w przykładzie typ `sciana`, niewidoczny w grze).
@@ -298,6 +381,21 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
   Obie są widoczne tylko w edytorze. Gra nie musi czytać tych obiektów: ich kształty są w `derived.collision` (3.7) i w masce `derived.blocked` (3.5).
 - **Dekoracje** (`@decoration`, wbudowany typ edytora, od formatu 3) – dowolny model z biblioteki bez logiki gry. Model jest w polu `model` obiektu, a flagi w `props.collision` (blokuje ruch) i `props.walkable` (można po nim chodzić). Gra może je narysować jak zwykły model; ich kolizje i powierzchnie są już w `derived`.
 - **Własny model obiektu** (`model`, opcjonalnie, od formatu 3) – odwołanie do pliku modelu, np. `"modele/beczka.glb"`, które zastępuje `look.model` typu. Ma je każda dekoracja, a także obiekt typu ze schematu, który powstał z dekoracji przez „Zmień typ”. Taki model stoi w punkcie obiektu bez ułożenia z typu (bez `modelScale`/`modelOffset`/`modelRotation`); działają tylko położenie, obrót i skala obiektu.
+
+### 3.3a. Skala bazowa modeli (`models`) – od formatu 4
+
+```json
+"models": {
+  "modele/beczka.glb": { "baseScale": 0.5 },
+  "modele/postac.glb": { "baseScale": 0.01 }
+}
+```
+
+Klucz to odwołanie do modelu (jak w `objects[].model` i `look.model`; edytor dopasowuje je po nazwie pliku bez katalogu i rozszerzenia). `baseScale` (liczba dodatnia) to skala bazowa modelu: zwykle wynik normalizacji do rozmiaru w metrach (2.1b). Działa na **wszystkie** kopie modelu w mapie: na dekoracje, obiekty z własnym modelem, obiekty typów z tym modelem (`look.model`) i na postać gracza (`player.model`). Model, którego nie ma w `models`, ma skalę bazową 1.
+
+Punkt pliku modelu `p` trafia na mapę tak: `położenie + R(obrót obiektu) · (scale · (modelOffset + R(modelRotation) · (modelScale · baseScale · p)))`. Dla własnego modelu obiektu (3.3) `modelOffset`, `modelRotation` i `modelScale` są zerowe/jedynkowe.
+
+Zmiana skali bazowej w edytorze (pole „Skala bazowa modelu” w panelu właściwości albo okno normalizacji w bibliotece) zmienia od razu wszystkie kopie i jest jednym krokiem cofania. Biblioteka edytora pamięta skalę bazową modelu (`biblioteka.json`, 3.7a) i nadaje ją mapie, gdy model pojawia się w niej pierwszy raz.
 
 ### 3.4. Grupy
 
@@ -348,7 +446,7 @@ Skąd się biorą kształty:
 ```
 mapa.json         – plik mapy (jak zwykły zapis, z derived)
 schemat.json      – schemat (ze zmianami zrobionymi w edytorze, np. przypisane modele)
-biblioteka.json   – foldery biblioteki modeli (tylko dla edytora)
+biblioteka.json   – foldery, skale bazowe i kategorie modeli w bibliotece (tylko dla edytora)
 modele/*.glb      – wszystkie modele z biblioteki edytora
 ```
 

@@ -2,6 +2,31 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.4.0] – 2026-11-17
+
+Skala świata, rozmiar mapy, reguły i przejścia (zadanie `docs/zadania/0.4/01-skala-i-przejscia.md`, raport `docs/raporty/0.4.md`).
+
+### Dodane
+- **Skala świata** w schemacie: `scale.unitsPerMeter` (ile jednostek mapy to 1 metr); bez niego przelicznik liczony z wysokości postaci (`player.height` = 1,8 m), bez obu – 1. Ostrzeżenie walidacji, gdy przelicznik i wysokość postaci się nie zgadzają.
+- **Wymiary w metrach** w panelu właściwości (w dymku – w jednostkach mapy).
+- **Manekin postaci** (klawisz **M**, przycisk „Manekin”): półprzezroczysta postać w skali gracza przy kursorze i obok zaznaczonego obiektu.
+- **Skala bazowa modelu i mnożnik obiektu:** skala bazowa należy do modelu (pole w panelu właściwości, menu biblioteki) i zmienia od razu wszystkie kopie modelu, także postać gracza; `scale` obiektu to jego mnożnik. Biblioteka pamięta skalę bazową i nadaje ją mapie przy pierwszym użyciu modelu.
+- **Normalizacja przy imporcie:** pomiar modelu, kategorie z rozmiarami w metrach (postać 1,8 m, drzewo 6–10 m, krzew 1 m, skała 1,5 m, płot 1,2 m, budynek 10 m szerokości podstawy), zgadywanie kategorii z nazwy pliku, własny rozmiar; kategorie i rozmiary zmienia schemat (`scale.categories`). Menu modelu w bibliotece: „Skala bazowa (rozmiar w metrach)…”.
+- **Losowa wariacja** przy wstawianiu: zakres mnożnika skali i losowy obrót (punkty, bryły, dekoracje z biblioteki).
+- **Mapa → Zmień rozmiar…:** szerokość i długość (także w %), kotwica (środek albo róg), tryb „rozszerz” (płaski teren dookoła z wybraną warstwą i wysokością) albo „rozciągnij” (teren i położenia obiektów); gęstość siatki zachowana (albo własna liczba punktów), ostrzeżenie powyżej 1025 × 1025 punktów; jeden krok cofania.
+- **Zasady liczebności:** `exactly` (dokładnie N), `min`, `max`, przedział `min`–`max`, opcjonalnie `within` (osobno w każdej strefie danego typu). Komunikat zawsze mówi, której zasady dotyczy.
+- **Zachowania typów w trybie gry** (`behavior`): przejście (`teleport`, cel we właściwości typu `ref`; przyciemnienie ekranu, bez odsyłania z powrotem, brak celu – komunikat w panelu i ostrzeżenie walidacji) i strefa z komunikatem (`message`, tekst z właściwości; przy wejściu i wyjściu). Panel trybu gry pokazuje strefy pod postacią, nakładka C – strzałki od przejść do celów.
+- Przykładowy schemat: `scale`, typ „Przejście”, komunikat strefy „Obszar”, zasada „najwyżej 2 generatory w każdym obszarze”, kategoria „Lampa”.
+- Testy: zasady liczebności, skala w schemacie, zachowania, format 4 i skala bazowa (z cofaniem), normalizacja, wariacja, zmiana rozmiaru mapy, przejścia i strefy (razem 108).
+
+### Zmienione
+- **Format mapy 4** (migracja z 3: pusta sekcja `models`, mapa wygląda tak samo): sekcja `models` ze skalą bazową modeli; `objects[].scale` to mnożnik obiektu. Szczegóły: `docs/formaty.md` (3.1, 3.3, 3.3a).
+- **Schemat:** `defaultSize` i kategorie modeli są w metrach (× przelicznik); domyślne `player.radius`, `height`, `speed`, `stepHeight` liczone w metrach × przelicznik. Przy przeliczniku 1 (dotychczasowe schematy) nic się nie zmienia. `schemaVersion` bez zmian (nowe pola opcjonalne).
+- Komunikaty zasad liczebności: nowe kody `ruleCountExact`, `ruleCountRange` (obok `ruleCountMin`, `ruleCountMax`); własny komunikat ze schematu dostaje dopisek z opisem zasady.
+- Pole „Skala” obiektu z modelem nazywa się „Mnożnik skali”.
+- Duża mapa testowa `docs/przyklady-map/duza-mapa.zip` w formacie 4.
+- Plik zadania `docs/zadania/0.4/edytor-0.4-01-skala-i-przejscia.md` → `01-skala-i-przejscia.md` (konwencja `NN-nazwa.md`).
+
 ## [0.3.0] – 2026-11-17
 
 Tryb „zagraj tę mapę” i biblioteka modeli (zadanie `docs/zadania/0.3/01-zagraj.md`, raport `docs/raporty/0.3.md`).

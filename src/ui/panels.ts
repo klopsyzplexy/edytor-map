@@ -779,7 +779,6 @@ let schemaForIssues: Schema | null = null;
 
 /** Tekst problemu z walidacji; identyfikatory pól i typów zamienia na nazwy ze schematu. */
 export function issueText(i: Issue): string {
-  if (i.message) return L(i.message);
   const params = { ...i.params };
   const s = schemaForIssues;
   if (s) {
@@ -795,8 +794,18 @@ export function issueText(i: Issue): string {
       }
     }
   }
+  if (COUNT_CODES.includes(i.code)) {
+    // zasada liczebności: komunikat (własny albo standardowy) i opis zasady, której dotyczy
+    const kind = i.code === 'ruleCountExact' ? 'exact' : i.code === 'ruleCountMin' ? 'min' : i.code === 'ruleCountMax' ? 'max' : 'range';
+    const rule = t(`rule.${kind}`, params) + (params.zone !== undefined ? t('rule.within', params) : '');
+    const head = i.message ? L(i.message) : t(`issue.count.${params.problem}`, params);
+    return `${head} – ${t('issue.count.rule', { rule })}`;
+  }
+  if (i.message) return L(i.message);
   return t(`issue.${i.code}`, params);
 }
+
+const COUNT_CODES: Issue['code'][] = ['ruleCountExact', 'ruleCountMin', 'ruleCountMax', 'ruleCountRange'];
 
 export function renderValidation(root: HTMLElement, ctx: Ctx, issues: Issue[], header: HTMLElement): void {
   schemaForIssues = ctx.doc.schema;

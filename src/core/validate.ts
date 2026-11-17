@@ -1,6 +1,7 @@
 // Walidacja mapy według schematu. Wynik to lista problemów z kodami; teksty tłumaczy interfejs.
 import { insideMap, objectCenter, type MapData, type MapObject } from './map';
-import { getType, type LocText, type Schema } from './schema';
+import { pointInPolygon } from './math';
+import { getType, PLAYER_HEIGHT_M, type CountRule, type LocText, type Schema } from './schema';
 
 export type IssueLevel = 'error' | 'warning';
 
@@ -18,6 +19,10 @@ export type IssueCode =
   | 'outsideMap'
   | 'ruleCountMin'
   | 'ruleCountMax'
+  | 'ruleCountExact'
+  | 'ruleCountRange'
+  | 'teleportNoTarget'
+  | 'playerScaleMismatch'
   | 'ruleMinDistance'
   | 'unknownLayer'
   | 'schemaMismatch';
@@ -101,14 +106,33 @@ export function validateMap(schema: Schema, map: MapData): Issue[] {
     }
   }
 
+  // przelicznik ze schematu nie zgadza się z wysokością postaci (1,8 m)
+  if (schema.scale.source === 'schema') {
+    const m = schema.player.height / schema.scale.unitsPerMeter;
+    if (Math.abs(m - PLAYER_HEIGHT_M) > PLAYER_HEIGHT_M * 0.1)
+      issues.push({ level: 'warning', code: 'playerScaleMismatch', params: { height: Math.round(m * 100) / 100, expected: PLAYER_HEIGHT_M } });
+  }
+
+  // przejścia bez celu
+  for (const o of map.objects) {
+    const t = getType(schema, o.type);
+    if (t?.behavior?.type !== 'teleport') continue;
+    const v = o.props[t.behavior.target];
+    if (v === null || v === undefined || v === '') issues.push({ level: 'warning', code: 'teleportNoTarget', objectId: o.id, params: { name: o.name } });
+  }
+
   for (const r of schema.rules) {
     const ofType = map.objects.filter((o) => o.type === r.objectType);
     if (r.type === 'count') {
-      if (r.min !== undefined && ofType.length < r.min)
-        issues.push({ level: r.level, code: 'ruleCountMin', params: { type: r.objectType, min: r.min, count: ofType.length }, message: r.message, objectId: ofType[0]?.id });
-      if (r.max !== undefined && ofType.length > r.max)
-        for (const extra of ofType.slice(r.max))
-          issues.push({ level: r.level, code: 'ruleCountMax', objectId: extra.id, params: { type: r.objectType, max: r.max, count: ofType.length, name: extra.name }, message: r.message });
+      if (!r.within) checkCount(issues, r, ofType);
+      else
+        for (const zone of map.objects.filter((o) => o.type === r.within && o.points.length >= 3)) {
+          const inside = ofType.filter((o) => {
+            const c = objectCenter(o);
+            return pointInPolygon(c[0], c[2], zone.points);
+          });
+          checkCount(issues, r, inside, zone);
+        }
     } else if (r.type === 'minDistance') {
       const others = r.otherType ? map.objects.filter((o) => o.type === r.otherType) : ofType;
       for (const a of ofType)
@@ -134,4 +158,32 @@ function flatDistance(a: MapObject, b: MapObject): number {
   const pa = objectCenter(a);
   const pb = objectCenter(b);
   return Math.hypot(pa[0] - pb[0], pa[2] - pb[2]);
+}
+
+/** Rodzaj zasady liczebności: dokładnie N, co najmniej N, co najwyżej N albo przedział N–M. */
+export function countRuleKind(r: CountRule): 'exact' | 'min' | 'max' | 'range' {
+  if (r.exactly !== undefined || (r.min !== undefined && r.min === r.max)) return 'exact';
+  if (r.min !== undefined && r.max !== undefined) return 'range';
+  return r.min !== undefined ? 'min' : 'max';
+}
+
+const COUNT_CODES = { exact: 'ruleCountExact', min: 'ruleCountMin', max: 'ruleCountMax', range: 'ruleCountRange' } as const;
+
+/** Sprawdza liczebność; `zone` – strefa, w której liczono (zasada z `within`). */
+function checkCount(issues: Issue[], r: CountRule, objs: MapObject[], zone?: MapObject): void {
+  const kind = countRuleKind(r);
+  const min = r.exactly ?? r.min;
+  const max = r.exactly ?? r.max;
+  const code = COUNT_CODES[kind];
+  const params: Issue['params'] = { type: r.objectType, count: objs.length };
+  if (min !== undefined) params.min = min;
+  if (max !== undefined) params.max = max;
+  if (zone) params.zone = zone.name;
+  const base = { level: r.level, code, message: r.message } as const;
+  if (min !== undefined && objs.length < min)
+    // za mało: wskazujemy strefę (zasada w strefie) albo pierwszy obiekt typu
+    issues.push({ ...base, objectId: zone?.id ?? objs[0]?.id, params: { ...params, problem: 'tooFew' } });
+  if (max !== undefined && objs.length > max)
+    // za dużo: każdy nadmiarowy obiekt osobno (kliknięcie przenosi do niego)
+    for (const extra of objs.slice(max)) issues.push({ ...base, objectId: extra.id, otherId: zone?.id, params: { ...params, problem: 'tooMany', name: extra.name } });
 }

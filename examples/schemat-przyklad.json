@@ -7,6 +7,20 @@
   },
   "version": "1.0",
   "units": "m",
+  "scale": {
+    "unitsPerMeter": 1,
+    "categories": [
+      {
+        "id": "lampa",
+        "name": {
+          "pl": "Lampa",
+          "en": "Lamp"
+        },
+        "size": 3,
+        "measure": "height"
+      }
+    ]
+  },
   "camera": {
     "pitchDeg": 55,
     "yawDeg": 0,
@@ -388,6 +402,59 @@
       "properties": []
     },
     {
+      "id": "przejscie",
+      "name": {
+        "pl": "Przejście",
+        "en": "Transition"
+      },
+      "category": {
+        "pl": "Rozgrywka",
+        "en": "Gameplay"
+      },
+      "kind": "point",
+      "look": {
+        "shape": "cylinder",
+        "color": "#a35cff"
+      },
+      "defaultSize": [
+        1.4,
+        0.2,
+        1.4
+      ],
+      "flags": {
+        "collision": false,
+        "visibleInGame": true,
+        "walkable": false
+      },
+      "behavior": {
+        "type": "teleport",
+        "target": "cel"
+      },
+      "hint": {
+        "pl": "Wejście postaci przenosi ją do obiektu wskazanego w polu Cel.",
+        "en": "Stepping in moves the player to the object chosen in Target."
+      },
+      "properties": [
+        {
+          "id": "cel",
+          "name": {
+            "pl": "Cel",
+            "en": "Target"
+          },
+          "type": "ref",
+          "default": null,
+          "refTypes": [
+            "przejscie",
+            "start"
+          ],
+          "hint": {
+            "pl": "Dokąd przenosi przejście (inne przejście albo start).",
+            "en": "Where the transition leads (another transition or a start)."
+          }
+        }
+      ]
+    },
+    {
       "id": "trasa",
       "name": {
         "pl": "Trasa wozu",
@@ -470,7 +537,15 @@
           "type": "text",
           "default": ""
         }
-      ]
+      ],
+      "behavior": {
+        "type": "message",
+        "text": "nazwa"
+      },
+      "hint": {
+        "pl": "Strefa z nazwą: w trybie gry wejście i wyjście pokazuje nazwę.",
+        "en": "Named zone: in play mode entering and leaving shows its name."
+      }
     }
   ],
   "rules": [
@@ -496,6 +571,17 @@
       "objectType": "generator",
       "distance": 6,
       "level": "warning"
+    },
+    {
+      "type": "count",
+      "objectType": "generator",
+      "max": 2,
+      "within": "obszar",
+      "level": "warning",
+      "message": {
+        "pl": "W jednym obszarze mogą być najwyżej dwa generatory.",
+        "en": "At most two spawners per area."
+      }
     }
   ]
 }

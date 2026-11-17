@@ -57,18 +57,66 @@ export interface ObjectFlags {
   walkable: boolean;
 }
 
+/**
+ * Zachowanie typu w trybie gry (uniwersalne, ze schematu):
+ * - `teleport` – przejście: wejście postaci w obiekt przenosi ją do obiektu wskazanego właściwością `target` (typu `ref`);
+ * - `message` – strefa z komunikatem: wejście i wyjście pokazuje tekst z właściwości `text`.
+ */
+export type BehaviorDef = { type: 'teleport'; target: string } | { type: 'message'; text: string };
+
 export interface ObjectTypeDef {
   id: string;
   name: LocText;
   category: LocText;
   kind: ObjectKind;
   look: ObjectLook;
-  /** Rozmiar w jednostkach mapy [szerokość X, wysokość Y, głębokość Z]. */
+  /** Rozmiar prostej bryły w jednostkach mapy [X, Y, Z] (= `defaultSize` ze schematu w metrach × przelicznik). */
   defaultSize: [number, number, number];
+  /** Rozmiar prostej bryły w metrach, tak jak w schemacie. */
+  defaultSizeM: [number, number, number];
   flags: ObjectFlags;
   properties: PropDef[];
   hint?: LocText;
+  behavior?: BehaviorDef;
 }
+
+/** Jak mierzyć model przy normalizacji: wysokość albo szerokość podstawy (większy z boków X, Z). */
+export type ScaleMeasure = 'height' | 'width';
+
+/** Kategoria modeli z rozmiarem docelowym w metrach (normalizacja przy imporcie). */
+export interface ScaleCategory {
+  id: string;
+  /** Nazwa ze schematu; bez niej interfejs bierze nazwę z tłumaczeń (`scaleCategory.<id>`). */
+  name?: LocText;
+  /** Rozmiar docelowy w metrach. */
+  size: number;
+  /** Dopuszczalny zakres w metrach (np. drzewo 6–10 m); model w zakresie nie jest skalowany. */
+  min?: number;
+  max?: number;
+  measure: ScaleMeasure;
+}
+
+/** Skala świata: przelicznik jednostek mapy na metry i kategorie modeli. */
+export interface WorldScale {
+  /** Ile jednostek mapy to 1 metr. */
+  unitsPerMeter: number;
+  /** Skąd przelicznik: pole `scale.unitsPerMeter`, wysokość postaci (`player.height` = 1,8 m) albo domyślny 1. */
+  source: 'schema' | 'player' | 'default';
+  categories: ScaleCategory[];
+}
+
+/** Wzorcowa wysokość postaci w metrach. */
+export const PLAYER_HEIGHT_M = 1.8;
+
+/** Domyślne kategorie modeli (schemat może je zmienić po `id` albo dodać nowe). */
+export const DEFAULT_SCALE_CATEGORIES: ScaleCategory[] = [
+  { id: 'postac', size: 1.8, measure: 'height' },
+  { id: 'drzewo', size: 8, min: 6, max: 10, measure: 'height' },
+  { id: 'krzew', size: 1, measure: 'height' },
+  { id: 'skala', size: 1.5, measure: 'height' },
+  { id: 'plot', size: 1.2, measure: 'height' },
+  { id: 'budynek', size: 10, measure: 'width' },
+];
 
 export interface TerrainLayerDef {
   id: string;
@@ -116,8 +164,23 @@ export interface PlayerDef {
 
 export type RuleLevel = 'error' | 'warning';
 
+/**
+ * Zasada liczebności: dokładnie N (`exactly`), co najmniej N (`min`), co najwyżej N (`max`) albo przedział (`min` i `max`).
+ * `within` (id typu strefy) – liczba liczona osobno w każdej strefie tego typu (obiekty, których środek leży w strefie).
+ */
+export interface CountRule {
+  type: 'count';
+  objectType: string;
+  min?: number;
+  max?: number;
+  exactly?: number;
+  within?: string;
+  level: RuleLevel;
+  message?: LocText;
+}
+
 export type RuleDef =
-  | { type: 'count'; objectType: string; min?: number; max?: number; level: RuleLevel; message?: LocText }
+  | CountRule
   | { type: 'minDistance'; objectType: string; otherType?: string; distance: number; level: RuleLevel; message?: LocText };
 
 export interface MapDefaults {
@@ -136,6 +199,8 @@ export interface Schema {
   version: string;
   /** Nazwa jednostki (np. "m"), tylko do wyświetlania. */
   units: string;
+  /** Skala świata (przelicznik jednostek na metry, kategorie modeli). */
+  scale: WorldScale;
   camera: CameraDef;
   player: PlayerDef;
   terrainLayers: TerrainLayerDef[];
@@ -201,6 +266,47 @@ export function parseSchema(raw: unknown): Schema {
   if (camera.minDistance <= 0 || camera.maxDistance < camera.minDistance) p.push('camera.minDistance i camera.maxDistance: 0 < min ≤ max.');
   if (camera.pitchDeg <= 0 || camera.pitchDeg > 90) p.push('camera.pitchDeg musi być w zakresie (0, 90].');
   if (camera.distance <= 0) p.push('camera.distance musi być większe od 0.');
+
+  // Skala świata: przelicznik z pola scale.unitsPerMeter, a bez niego z wysokości postaci (1,8 m)
+  const sc = isObj(raw.scale) ? raw.scale : {};
+  if (raw.scale !== undefined && !isObj(raw.scale)) p.push('"scale" musi być obiektem.');
+  const rawPlayer = isObj(raw.player) ? raw.player : {};
+  let unitsPerMeter = 1;
+  let scaleSource: WorldScale['source'] = 'default';
+  if (sc.unitsPerMeter !== undefined) {
+    if (typeof sc.unitsPerMeter === 'number' && sc.unitsPerMeter > 0) {
+      unitsPerMeter = sc.unitsPerMeter;
+      scaleSource = 'schema';
+    } else p.push('scale.unitsPerMeter musi być liczbą dodatnią.');
+  } else if (typeof rawPlayer.height === 'number' && rawPlayer.height > 0) {
+    unitsPerMeter = rawPlayer.height / PLAYER_HEIGHT_M;
+    scaleSource = 'player';
+  }
+  const categories = DEFAULT_SCALE_CATEGORIES.map((c) => ({ ...c }));
+  if (sc.categories !== undefined && !Array.isArray(sc.categories)) p.push('scale.categories musi być listą.');
+  (Array.isArray(sc.categories) ? sc.categories : []).forEach((c, i) => {
+    const where = `scale.categories[${i}]`;
+    if (!isObj(c)) return p.push(`${where} musi być obiektem.`);
+    const cid = typeof c.id === 'string' && ID_RE.test(c.id) ? c.id : '';
+    if (!cid) return p.push(`${where}: brak poprawnego "id".`);
+    const prev = categories.find((x) => x.id === cid);
+    const size = num(c.size, prev?.size ?? NaN);
+    if (!(size > 0)) p.push(`${where}: "size" (metry) musi być liczbą dodatnią.`);
+    const measure: ScaleMeasure = c.measure === 'width' || c.measure === 'height' ? c.measure : (prev?.measure ?? 'height');
+    if (c.measure !== undefined && c.measure !== 'width' && c.measure !== 'height') p.push(`${where}: "measure" musi być "height" albo "width".`);
+    const cat: ScaleCategory = {
+      id: cid,
+      name: isLoc(c.name) ? c.name : prev?.name,
+      size,
+      min: typeof c.min === 'number' ? c.min : c.size !== undefined ? undefined : prev?.min,
+      max: typeof c.max === 'number' ? c.max : c.size !== undefined ? undefined : prev?.max,
+      measure,
+    };
+    if (cat.min !== undefined && cat.max !== undefined && cat.min > cat.max) p.push(`${where}: min większe niż max.`);
+    if (prev) Object.assign(prev, cat);
+    else categories.push(cat);
+  });
+  const scale: WorldScale = { unitsPerMeter, source: scaleSource, categories };
 
   // Warstwy terenu
   const terrainLayers: TerrainLayerDef[] = [];
@@ -289,13 +395,30 @@ export function parseSchema(raw: unknown): Schema {
         if (def.min !== undefined && def.max !== undefined && def.min > def.max) p.push(`${pw}: min większe niż max.`);
         props.push(def);
       });
+      let behavior: BehaviorDef | undefined;
+      const b = t.behavior;
+      if (b !== undefined) {
+        if (!isObj(b)) p.push(`${w}: "behavior" musi być obiektem.`);
+        else if (b.type === 'teleport') {
+          const target = typeof b.target === 'string' ? b.target : '';
+          const tp = props.find((x) => x.id === target);
+          if (!tp || tp.type !== 'ref') p.push(`${w}: behavior "teleport" wymaga "target" – id właściwości typu "ref".`);
+          behavior = { type: 'teleport', target };
+        } else if (b.type === 'message') {
+          const text = typeof b.text === 'string' ? b.text : '';
+          if (!props.some((x) => x.id === text)) p.push(`${w}: behavior "message" wymaga "text" – id właściwości z tekstem.`);
+          if (kind !== 'zone') p.push(`${w}: behavior "message" działa tylko dla stref (kind "zone").`);
+          behavior = { type: 'message', text };
+        } else p.push(`${w}: nieznane zachowanie "${String(b.type)}" (dostępne: teleport, message).`);
+      }
       objectTypes.push({
         id: tid,
         name: isLoc(t.name) ? t.name : tid,
         category: isLoc(t.category) ? t.category : 'Inne',
         kind,
         look: { shape, color, model: typeof look.model === 'string' ? look.model : undefined, modelTransform: parseTransform(look, w, p) },
-        defaultSize: ds,
+        defaultSize: [ds[0] * unitsPerMeter, ds[1] * unitsPerMeter, ds[2] * unitsPerMeter],
+        defaultSizeM: [...ds],
         flags: {
           collision: f.collision === true,
           visibleInGame: f.visibleInGame !== false,
@@ -303,6 +426,7 @@ export function parseSchema(raw: unknown): Schema {
         },
         properties: props,
         hint: isLoc(t.hint) ? t.hint : undefined,
+        behavior,
       });
     });
 
@@ -322,10 +446,25 @@ export function parseSchema(raw: unknown): Schema {
     if (!typeIds.has(objectType)) p.push(`${where}: nieznany objectType "${objectType}".`);
     const message = isLoc(r.message) ? r.message : undefined;
     if (r.type === 'count') {
-      const min = typeof r.min === 'number' ? r.min : undefined;
-      const max = typeof r.max === 'number' ? r.max : undefined;
-      if (min === undefined && max === undefined) p.push(`${where}: zasada "count" wymaga "min" lub "max".`);
-      rules.push({ type: 'count', objectType, min, max, level, message });
+      const intOrUndef = (k: 'min' | 'max' | 'exactly') => {
+        const v = r[k];
+        if (v === undefined) return undefined;
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) {
+          p.push(`${where}: "${k}" musi być liczbą całkowitą ≥ 0.`);
+          return undefined;
+        }
+        return v;
+      };
+      const min = intOrUndef('min');
+      const max = intOrUndef('max');
+      const exactly = intOrUndef('exactly');
+      if (min === undefined && max === undefined && exactly === undefined) p.push(`${where}: zasada "count" wymaga "exactly", "min" lub "max".`);
+      if (exactly !== undefined && (min !== undefined || max !== undefined)) p.push(`${where}: "exactly" nie łączy się z "min" i "max".`);
+      if (min !== undefined && max !== undefined && min > max) p.push(`${where}: min większe niż max.`);
+      const within = typeof r.within === 'string' ? r.within : undefined;
+      if (r.within !== undefined && (!within || !typeIds.has(within))) p.push(`${where}: "within" wskazuje nieznany typ "${String(r.within)}".`);
+      else if (within && objectTypes.find((t) => t.id === within)?.kind !== 'zone') p.push(`${where}: "within" musi wskazywać typ strefy (kind "zone").`);
+      rules.push({ type: 'count', objectType, min, max, exactly, within, level, message });
     } else if (r.type === 'minDistance') {
       const otherType = typeof r.otherType === 'string' ? r.otherType : undefined;
       if (otherType !== undefined && !typeIds.has(otherType)) p.push(`${where}: nieznany otherType "${otherType}".`);
@@ -342,10 +481,11 @@ export function parseSchema(raw: unknown): Schema {
     model: typeof pl.model === 'string' && pl.model ? pl.model : undefined,
     modelTransform: parseTransform(pl, 'player', p),
     animations: { idle: typeof anim.idle === 'string' ? anim.idle : undefined, walk: typeof anim.walk === 'string' ? anim.walk : undefined },
-    radius: num(pl.radius, 0.4),
-    height: num(pl.height, 1.8),
-    speed: num(pl.speed, 5),
-    stepHeight: num(pl.stepHeight, 0.35),
+    // domyślne rozmiary postaci w metrach, przeliczone na jednostki mapy
+    radius: num(pl.radius, 0.4 * unitsPerMeter),
+    height: num(pl.height, PLAYER_HEIGHT_M * unitsPerMeter),
+    speed: num(pl.speed, 5 * unitsPerMeter),
+    stepHeight: num(pl.stepHeight, 0.35 * unitsPerMeter),
     startType: typeof pl.startType === 'string' && pl.startType ? pl.startType : undefined,
   };
   for (const k of ['radius', 'height', 'speed'] as const) if (!(player[k] > 0)) p.push(`player.${k} musi być większe od 0.`);
@@ -368,6 +508,7 @@ export function parseSchema(raw: unknown): Schema {
     name: raw.name as LocText,
     version: typeof raw.version === 'string' ? raw.version : String(raw.version ?? '1'),
     units: typeof raw.units === 'string' ? raw.units : 'm',
+    scale,
     camera,
     player,
     terrainLayers,

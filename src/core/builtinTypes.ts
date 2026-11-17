@@ -23,6 +23,7 @@ export const BUILTIN_TYPES: ObjectTypeDef[] = [
     kind: 'zone',
     look: { shape: 'box', color: '#ff4d4d', modelTransform: NO_TRANSFORM() },
     defaultSize: [1, 1, 1],
+    defaultSizeM: [1, 1, 1],
     flags: { collision: true, visibleInGame: false, walkable: false },
     properties: [],
     hint: tr('builtin.collisionZoneHint'),
@@ -34,6 +35,7 @@ export const BUILTIN_TYPES: ObjectTypeDef[] = [
     kind: 'path',
     look: { shape: 'box', color: '#ff8a3d', modelTransform: NO_TRANSFORM() },
     defaultSize: [1, 1, 1],
+    defaultSizeM: [1, 1, 1],
     flags: { collision: true, visibleInGame: false, walkable: false },
     properties: [{ id: 'width', name: tr('builtin.width'), type: 'number', default: 1, required: true, min: 0.05, max: 1000, step: 0.1, hint: tr('builtin.widthHint') }],
     hint: tr('builtin.collisionLineHint'),
@@ -46,6 +48,7 @@ export const BUILTIN_TYPES: ObjectTypeDef[] = [
     kind: 'point',
     look: { shape: 'box', color: '#b48ce0', modelTransform: NO_TRANSFORM() },
     defaultSize: [1, 1, 1],
+    defaultSizeM: [1, 1, 1],
     flags: { collision: false, visibleInGame: true, walkable: false },
     properties: [
       { id: 'collision', name: tr('builtin.flagCollision'), type: 'bool', default: false, required: false, hint: tr('builtin.flagCollisionHint') },

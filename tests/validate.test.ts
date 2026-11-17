@@ -15,7 +15,7 @@ describe('walidacja mapy', () => {
   it('pusta mapa: brak startu (błąd) i brak generatora (ostrzeżenie)', () => {
     const { schema, doc } = setup();
     const issues = validateMap(schema, doc.map);
-    expect(issues.find((i) => i.code === 'ruleCountMin' && i.params.type === 'start')?.level).toBe('error');
+    expect(issues.find((i) => i.code === 'ruleCountExact' && i.params.type === 'start')?.level).toBe('error');
     expect(issues.find((i) => i.code === 'ruleCountMin' && i.params.type === 'generator')?.level).toBe('warning');
   });
 
@@ -23,7 +23,7 @@ describe('walidacja mapy', () => {
     const { schema, doc } = setup();
     doc.addObject('start', [1, 0, 1]);
     const second = doc.addObject('start', [3, 0, 3]);
-    const i = validateMap(schema, doc.map).find((x) => x.code === 'ruleCountMax');
+    const i = validateMap(schema, doc.map).find((x) => x.code === 'ruleCountExact' && x.params.problem === 'tooMany');
     expect(i?.objectId).toBe(second.id);
   });
 

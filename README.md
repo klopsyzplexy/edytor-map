@@ -110,6 +110,28 @@ W zakładce **Obiekty** (sekcja „Kolizje (edytor)”) i na pasku narzędzi są
 
 Obie są widoczne tylko w edytorze (znikają w „Widoku gry”). Przy zapisie trafiają do pliku mapy razem ze ścianami kolizji i maską stromych zboczy.
 
+### Biblioteka modeli i dekoracje
+
+Zakładka **Biblioteka** (z lewej) pokazuje wszystkie wczytane modele z miniaturami:
+
+- **Wgrywanie:** przycisk „Wgraj modele…” albo **upuść pliki na okno edytora** (.glb, .gltf, .fbx, .obj albo .zip z modelem). Przycisk „Przykładowe modele” wczytuje kładkę, postać z animacjami, beczkę i skrzynię.
+- **Szukanie i foldery:** pole wyszukiwania (po nazwie, folderze albo roli), a w menu modelu (⋯) „Folder…” przenosi model do folderu.
+- **Dekoracja:** przeciągnij model z biblioteki na mapę (albo dwuklik – wstawia na środku widoku). Powstaje obiekt „Dekoracja” – dowolny model bez logiki gry. Przy obiekcie zaznaczysz **Kolizja** (blokuje ruch) i **Chodliwy** (można po nim chodzić).
+- **Użyj jako…** (menu ⋯ modelu): model postaci gracza albo model dowolnego typu ze schematu (np. generator, boss, budynek). Otworzy się okno „Model typu” z **skalą, obrotem i przesunięciem** modelu względem punktu obiektu. Zmiana zapisuje się w schemacie, bez edycji pliku JSON (Ctrl + Z cofa). Przy modelu w bibliotece widać jego rolę, np. „Gracz”, „Drzewo”.
+- **Model typu…** – ten sam przycisk jest w panelu właściwości zaznaczonego obiektu.
+- **Zmień typ** (panel właściwości): dekoracja może stać się obiektem typu ze schematu i odwrotnie. Model, pozycja, obrót i skala zostają, a panel pokazuje właściwości nowego typu.
+- **Plik → Pobierz schemat** zapisuje schemat ze zmianami (np. przypisanymi modelami), żeby przekazać go grze.
+
+### Tryb gry – „zagraj tę mapę”
+
+Przycisk **▶ Zagraj** albo **F5** stawia postać w obiekcie startowym (typ wskazany w schemacie, w przykładzie „Start gracza”). **Shift + F5** stawia ją pod kursorem. **Esc** wraca do edytora z tą samą kamerą i narzędziami. Mapa w trybie gry się nie zmienia.
+
+- **Ruch:** WASD albo strzałki (względem kamery). Kliknięcie na terenie – postać idzie do punktu; przytrzymanie przycisku – idzie w stronę kursora jak joystick. **Kółko** przybliża kamerę w granicach ze schematu.
+- **Kolizje:** postać nie przejdzie przez lasso i linie kolizji, ściany i obiekty z kolizją (także dekoracje), strome zbocza (gdy w mapie włączono „Oznacz zbyt strome zbocza”) ani warstwy nieprzechodnie (np. głęboka woda). Przy ukośnym zderzeniu ślizga się wzdłuż przeszkody. Wchodzi na mosty i inne powierzchnie chodliwe oraz na stopnie do wysokości ze schematu; pod wysokim mostem przechodzi.
+- **Nakładki** (klawisz **C** albo pola w panelu): kolizje kolorami (lasso, linie, obiekty, zbocza i warstwy, powierzchnie chodliwe), strefy i ścieżki, nazwy obiektów.
+- **Panel** w rogu: pozycja postaci, wysokość stóp i terenu, nachylenie, liczba klatek na sekundę i to, co właśnie blokuje ruch.
+- Postać to kapsuła albo model ze schematu (sekcja `player`) z animacjami „stoi” i „idzie”. Model postaci ustawisz w bibliotece: „Użyj jako… → Model postaci gracza”.
+
 ### Podgląd i sprawdzanie
 
 - **Widok gry** (klawisz **V**) ustawia kamerę jak w grze i ukrywa obiekty widoczne tylko w edytorze (np. niewidzialne ściany). Ponowne kliknięcie wraca do swobodnej kamery.
@@ -129,7 +151,8 @@ Zapisany plik zawiera wszystko, czego gra potrzebuje:
 
 - teren, warstwy i obiekty;
 - ścieżki, strefy, ściany kolizji i kolizje rysowane (lasso, linie);
-- maskę nieprzechodniości (strome zbocza i wszystkie kolizje);
+- maskę nieprzechodniości (strome zbocza, warstwy nieprzechodnie i wszystkie kolizje);
+- listę potrzebnych modeli (same modele przekaż osobno albo w projekcie `.zip`);
 - powierzchnie, po których można chodzić (np. mosty).
 
 Opis dla programistów gry: [docs/formaty.md](docs/formaty.md).
@@ -140,6 +163,7 @@ Opis dla programistów gry: [docs/formaty.md](docs/formaty.md).
 - **Plik → Użyj przykładowego schematu** wraca do schematu do nauki (`examples/schemat-przyklad.json`).
 - **Plik → Wczytaj modele…** – jeśli schemat używa modeli 3D, wskaż ich pliki. Edytor dopasuje je po nazwie pliku (bez rozszerzenia, więc `drzewo.fbx` pasuje do `drzewo.glb` w schemacie) i zapamięta w wersji roboczej.
 - **Plik → Pobierz modele jako .glb** – wszystkie wczytane modele w jednym archiwum `.zip`, w formacie, którego używa gra.
+- **Plik → Eksportuj projekt (.zip)** – mapa, schemat, foldery biblioteki i wszystkie modele w jednym archiwum. Taki plik otworzysz przez „Plik → Otwórz mapę…” albo upuszczając go na okno – wraca wszystko, także biblioteka. Przykład: `docs/przyklady-map/duza-mapa.zip` (duża mapa do sprawdzania płynności).
 
 ### Formaty modeli – który wybrać?
 
@@ -167,4 +191,4 @@ Edytor wczytuje cztery formaty, ale każdy model od razu zamienia na **.glb**. D
   - `storage/` – zapis roboczy i pliki;
   - `i18n/` – tłumaczenia.
 - Zasady projektu: [CLAUDE.md](CLAUDE.md). Zmiany: [CHANGELOG.md](CHANGELOG.md).
-- `node tools/make-example-glb.mjs` odtwarza przykładowy model `examples/modele/kladka.glb`, a `node tools/make-example-stamps.mjs` – przykładowe stemple `examples/stemple/*.png`.
+- `node tools/make-example-glb.mjs` odtwarza przykładowy model `examples/modele/kladka.glb`, `node tools/make-example-models.mjs` – postać z animacjami, beczkę i skrzynię (`examples/modele/`), `node tools/make-example-stamps.mjs` – przykładowe stemple `examples/stemple/*.png`, a `node tools/make-big-map.mjs` – dużą mapę `docs/przyklady-map/duza-mapa.zip`.

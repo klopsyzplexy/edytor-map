@@ -2,6 +2,32 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.3.0] – 2026-11-17
+
+Tryb „zagraj tę mapę” i biblioteka modeli (zadanie `docs/zadania/0.3/01-zagraj.md`, raport `docs/raporty/0.3.md`).
+
+### Dodane
+- **Tryb gry:** przycisk „▶ Zagraj” i **F5** (start w obiekcie startowym), **Shift + F5** (start pod kursorem), **Esc** (powrót do edytora z tą samą kamerą i narzędziami; mapa się nie zmienia). Ruch: WASD/strzałki względem kamery, kliknięcie – idź do punktu, przytrzymanie – idź w stronę kursora. Kamera jak w grze, płynnie podąża za postacią, kółko przybliża w granicach ze schematu.
+- Kolizje w trybie gry: lasso i linie kolizji, ściany i obiekty z flagą kolizji (także dekoracje), strome zbocza (gdy włączone w mapie), warstwy nieprzechodnie. Ślizg wzdłuż przeszkód, wejście na stopnie do `player.stepHeight`, chodzenie po mostach i powierzchniach chodliwych modeli, przejście pod wysokim mostem, spadanie z wysokości. Ruch pod górę bez zmiany szybkości.
+- Postać: kapsuła albo model ze schematu z animacjami „stoi” i „idzie” (płynne przejście, obrót w stronę ruchu).
+- Nakładki (**C** i pola w panelu): kolizje kolorami z legendą, strefy i ścieżki, nazwy obiektów. Panel: pozycja, wysokość stóp i terenu, nachylenie, klatki na sekundę, co blokuje ruch.
+- **Biblioteka modeli** (zakładka „Biblioteka”): miniatury, wyszukiwanie, foldery, wgrywanie przez upuszczenie plików na okno, „Przykładowe modele”, usuwanie.
+- **Dekoracje** (wbudowany typ `@decoration`): dowolny model z biblioteki przeciągnięty na mapę, z flagami „Kolizja” i „Chodliwy” przy obiekcie.
+- **Użyj jako…** (postać gracza albo typ ze schematu) i okno **Model typu** (model, skala, obrót, przesunięcie) – zmiana zapisuje się w schemacie, z cofaniem; rola modelu widoczna w bibliotece. **Zmień typ** w panelu właściwości (dekoracja ↔ typ ze schematu, z zachowaniem modelu, pozycji, obrotu i skali).
+- **Plik → Eksportuj projekt (.zip)** (mapa, schemat, foldery biblioteki, modele .glb) i otwieranie takiego projektu (menu albo upuszczenie na okno); **Plik → Pobierz schemat**.
+- Schemat: sekcja `player` (model, ułożenie modelu, animacje, promień, wysokość, szybkość, stopień, typ startu), `camera.followSmoothing`, `camera.minDistance`/`maxDistance`, warstwy `passable`, `look.modelScale`/`modelOffset`/`modelRotation`. Wszystko opcjonalne (`schemaVersion` bez zmian).
+- Przykłady: w schemacie – sekcja `player` i warstwa „Głęboka woda” (nieprzechodnia); modele `postac.glb` (animacje „stoi”, „idzie”), `beczka.glb`, `skrzynia.glb` (`tools/make-example-models.mjs`); duża mapa 512 × 512 z 3881 obiektami `docs/przyklady-map/duza-mapa.zip` (`tools/make-big-map.mjs`).
+- Testy: ruch i kolizje trybu gry, wybór animacji, schemat gracza i warstw, modele obiektów i dekoracje, maska warstw, format 3, zmiany schematu z cofaniem, „Zmień typ”, projekt `.zip` (razem 73).
+
+### Zmienione
+- **Format mapy 3** (migracja z 2 bez zmian w danych): obiekt może mieć własny `model`; wbudowany typ `@decoration` (`props.collision`, `props.walkable`); nowa sekcja `derived.models` (lista potrzebnych modeli); `derived.blocked` obejmuje też warstwy nieprzechodnie. Szczegóły: `docs/formaty.md`.
+- Obrys kolizji obiektu z modelem w `derived.collision` liczony z pudełka samego modelu (po jego ułożeniu), a nie z `defaultSize`; tak samo powierzchnie chodliwe uwzględniają ułożenie modelu.
+- Ściąga skrótów: nowa sekcja „Tryb gry” (F5, Shift + F5, WASD, C, Esc).
+- Plik zadania `docs/zadania/0.3/edytor-0.3-01-zagraj.md` → `01-zagraj.md` (konwencja `NN-nazwa.md`).
+
+### Naprawione
+- Wydajność dużych map: powierzchnia wody rysowana tylko w oczkach z wodą (wcześniej cała siatka terenu drugi raz), wspólne materiały prostych brył.
+
 ## [0.2.0] – 2026-11-17
 
 Usprawnienia po pierwszych testach (zadanie `docs/zadania/0.2/01-usprawnienia.md`, raport `docs/raporty/0.2.md`).

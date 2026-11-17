@@ -2,10 +2,10 @@
 // dzięki czemu działa cofnij/ponów i odświeżanie widoków. Bez DOM i Three.js.
 import { History } from './history';
 import { cloneObject, createObject, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Vec3 } from './map';
-import { getType, type Schema } from './schema';
+import { getType, parseSchema, type Schema } from './schema';
 import { copyRect, pasteRect, unionRect, type Rect } from './terrain';
 
-export type DocEvent = 'map' | 'objects' | 'terrain' | 'selection' | 'settings' | 'history';
+export type DocEvent = 'map' | 'objects' | 'terrain' | 'selection' | 'settings' | 'history' | 'schema';
 type Listener = (payload?: unknown) => void;
 
 interface ObjectsSnapshot {
@@ -27,9 +27,14 @@ export class EditorDoc {
   private listeners = new Map<DocEvent, Set<Listener>>();
   private stroke: StrokeState | null = null;
 
+  /**
+   * @param schemaRaw surowy JSON schematu (zmiany z interfejsu, np. przypisanie modelu, robione są na nim,
+   *   żeby zachować pola, których edytor nie zna); bez niego zmiany schematu są niedostępne
+   */
   constructor(
     public schema: Schema,
     public map: MapData,
+    public schemaRaw: unknown = undefined,
   ) {
     syncLayersWithSchema(map, schema);
   }
@@ -45,8 +50,9 @@ export class EditorDoc {
   }
 
   /** Nowa mapa lub wczytany plik: czyści historię i zaznaczenie. */
-  setMap(map: MapData, schema: Schema = this.schema): void {
+  setMap(map: MapData, schema: Schema = this.schema, schemaRaw: unknown = this.schemaRaw): void {
     this.schema = schema;
+    this.schemaRaw = schemaRaw;
     syncLayersWithSchema(map, schema);
     this.map = map;
     this.selection = [];
@@ -332,6 +338,29 @@ export class EditorDoc {
       },
     });
     this.emit('settings');
+    this.touched();
+  }
+
+  // ---------- schemat (zmiany z interfejsu) ----------
+
+  /**
+   * Zmienia schemat jako jeden krok historii (np. przypisanie modelu do typu). `fn` dostaje kopię surowego
+   * JSON-u i zwraca nowy. Gdy wynik nie jest poprawnym schematem, rzuca `SchemaError` i nic nie zmienia.
+   */
+  editSchema(label: string, fn: (raw: unknown) => unknown): void {
+    if (this.schemaRaw === undefined) throw new Error('Brak surowego schematu – zmiany schematu są niedostępne.');
+    const beforeRaw = this.schemaRaw;
+    const beforeSchema = this.schema;
+    const afterRaw = fn(structuredClone(beforeRaw));
+    const afterSchema = parseSchema(afterRaw);
+    const apply = (raw: unknown, schema: Schema) => {
+      this.schemaRaw = raw;
+      this.schema = schema;
+      syncLayersWithSchema(this.map, schema);
+      this.emit('schema');
+    };
+    this.history.push({ label, undo: () => apply(beforeRaw, beforeSchema), redo: () => apply(afterRaw, afterSchema) });
+    apply(afterRaw, afterSchema);
     this.touched();
   }
 

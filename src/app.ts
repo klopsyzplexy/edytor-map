@@ -6,7 +6,14 @@ import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/for
 import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type Schema } from './core/schema';
 import { collectCollision, COLLISION_LINE, computeBlockedMask } from './core/collision';
-import { usedModels } from './core/objectModel';
+import { changeObjectType, modelRef, usedModels } from './core/objectModel';
+import { DECORATION } from './core/builtinTypes';
+import { createObject } from './core/map';
+import { setPlayerModel, setTypeModel } from './core/schemaEdit';
+import { fileStem } from './core/modelFiles';
+import { Thumbnails } from './render/thumbnails';
+import { isProjectZip, packProject, unpackProject } from './storage/project';
+import { MODEL_DRAG_TYPE, renderLibrary, type LibraryState } from './ui/library';
 import { raycastTerrain } from './core/terrain';
 import type { Issue } from './core/validate';
 import { collectWalkable } from './core/walkable';
@@ -22,15 +29,15 @@ import { findStart } from './core/play';
 import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
 import { loadAutosave, writeAutosave } from './storage/autosave';
-import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, saveTextFile, type FsHandle } from './storage/files';
+import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, openMapFile, saveTextFile, type FsHandle } from './storage/files';
 import { StampLibrary } from './tools/stamps';
 import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
-import { alertBox, confirmBox, helpDialog, newMapDialog, toast } from './ui/dialogs';
+import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, promptBox, toast } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
-type LeftTab = 'objects' | 'terrain' | 'list';
+type LeftTab = 'objects' | 'terrain' | 'list' | 'library';
 
 export class App implements Ctx {
   doc!: EditorDoc;
@@ -59,12 +66,13 @@ export class App implements Ctx {
     slopeOverlay: true,
   };
 
-  private schemaRaw: unknown = exampleSchemaRaw;
   private fileHandle: FsHandle | undefined;
   private fileName: string | undefined;
   private tools!: Record<ToolId, Tool>;
   private leftTab: LeftTab = 'objects';
   private listState: ListState = { query: '', type: '', collapsed: new Set() };
+  private libraryState: LibraryState = { query: '', collapsed: new Set() };
+  private thumbs = new Thumbnails(this.models);
   private issues: Issue[] = [];
   private lastHit: { x: number; y: number; hit: Vec3 | null } | null = null;
   private savedAt: number | null = null;
@@ -108,7 +116,13 @@ export class App implements Ctx {
     this.el.view.append(this.minimap.el);
     this.gizmo = new Gizmo(this.viewport, () => this.doc, () => this.objects);
     this.play = new PlayMode(this, this.el.view, (game, guides) => this.objects.setGameView(game || this.gameView, guides, !game), () => this.afterPlay());
-    this.models.onChange = () => this.objects?.sync();
+    const libChanged = debounce(() => {
+      if (this.leftTab === 'library' && this.doc) this.renderLeft();
+    }, 120);
+    this.models.onChange = () => {
+      this.objects?.sync();
+      libChanged();
+    };
     this.stamps.onChange = () => {
       if (this.doc) this.stateChanged();
     };
@@ -124,6 +138,7 @@ export class App implements Ctx {
     });
     this.bindPointer();
     this.bindKeys();
+    this.bindDrop();
     onLangChange(() => this.renderAll());
   }
 
@@ -137,9 +152,9 @@ export class App implements Ctx {
         const map = parseMap(saved.mapJson);
         for (const [name, data] of Object.entries(saved.models ?? {})) this.models.addFile(name, data);
         for (const [name, data] of Object.entries(saved.stamps ?? {})) await this.stamps.addFile(name, data).catch(() => null);
-        this.schemaRaw = saved.schemaRaw;
+        this.models.applyLibraryJson(saved.library);
         this.fileName = saved.fileName;
-        this.init(schema, map);
+        this.init(schema, map, saved.schemaRaw);
         this.savedAt = saved.savedAt;
         toast(t('toast.restored', { time: new Date(saved.savedAt).toLocaleString(getLang()) }));
         restored = true;
@@ -150,19 +165,19 @@ export class App implements Ctx {
     if (!restored) {
       const schema = parseSchema(exampleSchemaRaw);
       const d = schema.mapDefaults;
-      this.init(schema, createMap(schema, { name: t('newMap.defaultName'), size: d.size, resolution: d.resolution, height: d.height }));
+      this.init(schema, createMap(schema, { name: t('newMap.defaultName'), size: d.size, resolution: d.resolution, height: d.height }), structuredClone(exampleSchemaRaw));
     }
   }
 
-  private init(schema: Schema, map: MapData): void {
+  private init(schema: Schema, map: MapData, schemaRaw: unknown): void {
     if (!this.doc) {
-      this.doc = new EditorDoc(schema, map);
+      this.doc = new EditorDoc(schema, map, schemaRaw);
       this.objects = new ObjectsView(this.doc, this.models);
       this.viewport.root.add(this.objects.group);
       this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this), lasso: new LassoTool(this) };
       this.bindDoc();
       this.onMapReplaced();
-    } else this.doc.setMap(map, schema);
+    } else this.doc.setMap(map, schema, schemaRaw);
   }
 
   private bindDoc(): void {
@@ -197,6 +212,12 @@ export class App implements Ctx {
     d.on('history', () => {
       this.renderToolbar();
       autosave();
+    });
+    // zmiana schematu z interfejsu (model typu, model postaci): przerysuj obiekty i panele
+    d.on('schema', () => {
+      this.objects.sync(true);
+      this.renderAll();
+      validate();
     });
   }
 
@@ -695,6 +716,15 @@ export class App implements Ctx {
       const hide = objs.some((o) => !o.hidden);
       this.doc.updateObjects(ids, (o) => (o.hidden = hide), 'hide');
     },
+    changeType: (ids, typeId) => {
+      try {
+        this.doc.updateObjects(ids.filter((id) => !this.doc.getObject(id)?.points.length), (o) => changeObjectType(this.doc.schema, o, typeId), 'change-type');
+      } catch (e) {
+        toast(String((e as Error).message), 'error');
+      }
+    },
+    setObjectModel: (ids, model) => this.doc.updateObjects(ids, (o) => (model ? (o.model = model) : delete o.model), 'model'),
+    editTypeModel: (typeId) => void this.editTypeModel(typeId),
     toggleLocked: (ids) => {
       const objs = ids.map((id) => this.doc.getObject(id)).filter((o): o is MapObject => !!o);
       if (!objs.length) return;
@@ -702,6 +732,166 @@ export class App implements Ctx {
       this.doc.updateObjects(ids, (o) => (o.locked = lock), 'lock');
     },
   };
+
+  // ---------------- Biblioteka modeli ----------------
+
+  /** Dekoracja z modelem z biblioteki w punkcie mapy (jeden krok cofania). */
+  private addDecoration(name: string, at: Vec3): void {
+    const d = this.doc;
+    const o = createObject(d.schema, d.map, DECORATION, this.snap(at));
+    o.model = modelRef(name);
+    o.name = `${fileStem(name)}-${d.map.objects.filter((x) => x.model && fileStem(x.model) === fileStem(name)).length + 1}`;
+    d.transact('add', () => d.map.objects.push(o), [o.id]);
+  }
+
+  /** Okno „Model typu”: model z biblioteki i jego ułożenie, zapisywane w schemacie (cofnij/ponów). */
+  async editTypeModel(typeId: string, model?: string): Promise<void> {
+    const ty = this.doc.schema.objectTypes.find((x) => x.id === typeId);
+    if (!ty) return;
+    const name = locText(ty.name, getLang(), ty.id);
+    const sameAsNow = !model || fileStem(model) === fileStem(ty.look.model ?? '');
+    const r = await modelDialog(
+      t('modelDlg.typeTitle', { name }),
+      t('modelDlg.typeIntro', { name }),
+      this.models.fileNames.map(modelRef),
+      { model: model ? modelRef(model) : ty.look.model, transform: sameAsNow ? ty.look.modelTransform : { offset: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } },
+      t('modelDlg.noneType'),
+    );
+    if (!r) return;
+    this.tryEditSchema('type-model', (raw) => setTypeModel(raw, typeId, r.model, r.transform));
+  }
+
+  /** Okno „Model postaci” (sekcja player w schemacie). */
+  async editPlayerModel(model?: string): Promise<void> {
+    const pl = this.doc.schema.player;
+    const sameAsNow = !model || fileStem(model) === fileStem(pl.model ?? '');
+    const r = await modelDialog(
+      t('modelDlg.playerTitle'),
+      t('modelDlg.playerIntro'),
+      this.models.fileNames.map(modelRef),
+      { model: model ? modelRef(model) : pl.model, transform: sameAsNow ? pl.modelTransform : { offset: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] } },
+      t('modelDlg.nonePlayer'),
+    );
+    if (!r) return;
+    this.tryEditSchema('player-model', (raw) => setPlayerModel(raw, r.model, r.transform));
+  }
+
+  private tryEditSchema(label: string, fn: (raw: unknown) => unknown): void {
+    try {
+      this.doc.editSchema(label, fn);
+      toast(t('toast.schemaChanged'));
+    } catch (e) {
+      void alertBox(t('dlg.schemaFailed'), e instanceof SchemaError ? e.problems.join('\n') : String(e));
+    }
+  }
+
+  private libraryActions = {
+    importFiles: () => void this.loadModels(),
+    loadExamples: () => void this.loadExampleModels(),
+    place: (name: string) => {
+      const c = this.viewport.controls.target;
+      this.addDecoration(name, [c.x, heightAt(this.doc.map, c.x, c.z), c.z]);
+    },
+    useAs: async (name: string) => {
+      const types = this.doc.schema.objectTypes.filter((x) => x.kind === 'point' || x.kind === 'solid');
+      const role = await chooseBox(t('lib.useAsTitle', { name }), t('lib.useAsText'), [
+        { value: '@player', label: t('lib.rolePlayerLong') },
+        ...types.map((x) => ({ value: x.id, label: `${locText(x.name, getLang(), x.id)}${x.look.model ? ` (${fileStem(x.look.model)})` : ''}`, group: t('lib.roleTypes') })),
+      ]);
+      if (!role) return;
+      if (role === '@player') await this.editPlayerModel(name);
+      else await this.editTypeModel(role, name);
+    },
+    setFolder: async (name: string) => {
+      const folders = [...new Set(this.models.folders.values())].sort();
+      const v = await promptBox(t('lib.folderTitle', { name }), t('lib.folderLabel'), this.models.folders.get(name) ?? '', folders.length ? t('lib.folderExisting', { list: folders.join(', ') }) : t('lib.folderHint'));
+      if (v === null) return;
+      this.models.setFolder(name, v);
+      void this.autosave();
+    },
+    remove: async (name: string) => {
+      const used = this.doc.map.objects.filter((o) => o.model && fileStem(o.model) === fileStem(name)).length;
+      if (!(await confirmBox(t('lib.removeTitle'), t('lib.removeText', { name, n: used }), t('lib.remove')))) return;
+      this.models.remove(name);
+      void this.autosave();
+    },
+  };
+
+  /** Przykładowe modele z repozytorium (leżą obok edytora w katalogu modele/). */
+  private async loadExampleModels(): Promise<void> {
+    const names = ['kladka.glb', 'postac.glb', 'beczka.glb', 'skrzynia.glb'];
+    let n = 0;
+    for (const name of names) {
+      try {
+        const r = await fetch(`modele/${name}`);
+        if (!r.ok) continue;
+        this.models.addFile(name, await r.arrayBuffer());
+        if (!this.models.folders.has(name)) this.models.setFolder(name, t('lib.examplesFolder'));
+        n++;
+      } catch {
+        /* brak pliku – pomijamy */
+      }
+    }
+    toast(t('toast.modelsLoaded', { n }));
+    void this.autosave();
+  }
+
+  /** Przeciąganie: model z biblioteki na widok (dekoracja), pliki z dysku na okno (import modeli lub projekt). */
+  private bindDrop(): void {
+    const c = this.viewport.renderer.domElement;
+    const overlay = h('div', { class: 'drop-overlay' }, t('lib.dropFiles'));
+    let depth = 0;
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+    c.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer || ![...e.dataTransfer.types].includes(MODEL_DRAG_TYPE) || this.play.active) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      const hit = this.terrainHit(e);
+      if (hit) this.terrain.setBrush(hit[0], hit[2], 0.6, true, 0xb48ce0);
+    });
+    c.addEventListener('dragleave', () => this.terrain.setBrush(0, 0, 1, false));
+    c.addEventListener('drop', (e) => {
+      const name = e.dataTransfer?.getData(MODEL_DRAG_TYPE);
+      if (!name || this.play.active) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.terrain.setBrush(0, 0, 1, false);
+      this.lastHit = null;
+      const hit = this.terrainHit(e);
+      if (hit) this.addDecoration(name, hit);
+    });
+    window.addEventListener('dragenter', (e) => {
+      if (!hasFiles(e) || this.play.active) return;
+      depth++;
+      document.body.append(overlay);
+    });
+    window.addEventListener('dragleave', (e) => {
+      if (!hasFiles(e)) return;
+      if (--depth <= 0) (depth = 0), overlay.remove();
+    });
+    window.addEventListener('dragover', (e) => {
+      if (hasFiles(e)) e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      overlay.remove();
+      if (this.play.active) return;
+      const files = [...(e.dataTransfer?.files ?? [])];
+      void Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() }))).then((list) => this.importDropped(list));
+    });
+  }
+
+  private async importDropped(list: Array<{ name: string; data: ArrayBuffer }>): Promise<void> {
+    const project = list.find((f) => /\.zip$/i.test(f.name) && isProjectZip(f.data));
+    if (project) return this.openProject(project.name, project.data);
+    const map = list.find((f) => /\.json$/i.test(f.name));
+    if (map && list.length === 1) return void alertBox(t('lib.title'), t('lib.dropJson'));
+    await this.importModels(list.filter((f) => !/\.json$/i.test(f.name)));
+    this.leftTab = 'library';
+    this.renderLeft();
+  }
 
   // ---------------- Pliki ----------------
 
@@ -725,11 +915,12 @@ export class App implements Ctx {
     if (!(await this.confirmDiscard())) return;
     let f;
     try {
-      f = await openJsonFile();
+      f = await openMapFile();
     } catch (e) {
       return alertBox(t('dlg.error'), String(e));
     }
     if (!f) return;
+    if (f.data) return this.openProject(f.name, f.data, true);
     let map: MapData;
     try {
       map = parseMap(f.text);
@@ -745,6 +936,50 @@ export class App implements Ctx {
     this.doc.setMap(map);
     this.autosave();
     toast(t('toast.opened', { name: f.name }));
+  }
+
+  /** Projekt .zip: mapa, schemat, foldery biblioteki i modele (z „Eksportuj projekt”). */
+  async openProject(name: string, data: ArrayBuffer, confirmed = false): Promise<void> {
+    if (!confirmed && !(await this.confirmDiscard())) return;
+    let p, map: MapData, schema: Schema;
+    try {
+      p = unpackProject(data);
+      map = parseMap(p.mapJson);
+      schema = p.schemaRaw !== undefined ? parseSchema(p.schemaRaw) : this.doc.schema;
+    } catch (e) {
+      return alertBox(t('dlg.openFailed'), e instanceof MapFormatError ? e.message : e instanceof SchemaError ? e.problems.join('\n') : String(e));
+    }
+    for (const m of p.models) this.models.addFile(m.name, m.data);
+    this.models.applyLibraryJson(p.library);
+    this.fileHandle = undefined;
+    this.fileName = name.replace(/\.zip$/i, '.json');
+    this.doc.setMap(map, schema, p.schemaRaw !== undefined ? p.schemaRaw : this.doc.schemaRaw);
+    void this.autosave();
+    toast(t('toast.projectOpened', { name, n: p.models.length }));
+  }
+
+  /** Projekt w jednym .zip: mapa (z danymi dla gry), schemat, foldery biblioteki i wszystkie modele .glb. */
+  exportProject(): void {
+    const errors = this.issues.filter((i) => i.level === 'error').length;
+    if (errors) toast(t('toast.savedWithErrors', { n: errors }), 'error');
+    const zip = packProject({
+      mapJson: mapToJson(this.doc.map, this.derived(), __APP_VERSION__),
+      schemaRaw: this.doc.schemaRaw,
+      library: this.models.libraryJson(),
+      models: [...this.models.fileData].map(([name, data]) => ({ name, data })),
+    });
+    downloadBlob(new Blob([zip as Uint8Array<ArrayBuffer>], { type: 'application/zip' }), `${this.slug()}.zip`);
+    toast(t('toast.projectExported', { n: this.models.fileData.size }));
+  }
+
+  /** Schemat ze zmianami zrobionymi w edytorze (np. przypisane modele) – do podmiany w grze. */
+  downloadSchema(): void {
+    const id = this.doc.schema.id || 'schemat';
+    downloadBlob(new Blob([JSON.stringify(this.doc.schemaRaw, null, 2) + '\n'], { type: 'application/json' }), `${id}.schemat.json`);
+  }
+
+  private slug(): string {
+    return (this.doc.map.settings.name || 'mapa').toLowerCase().replace(/[^a-z0-9ąćęłńóśźż_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'mapa';
   }
 
   /**
@@ -764,7 +999,7 @@ export class App implements Ctx {
     const errors = this.issues.filter((i) => i.level === 'error').length;
     if (errors) toast(t('toast.savedWithErrors', { n: errors }), 'error');
     const text = mapToJson(this.doc.map, this.derived(), __APP_VERSION__);
-    const slug = (this.doc.map.settings.name || 'mapa').toLowerCase().replace(/[^a-z0-9ąćęłńóśźż_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'mapa';
+    const slug = this.slug();
     try {
       const r = await saveTextFile(text, this.fileName ?? `${slug}.json`, saveAs ? undefined : this.fileHandle);
       if (!r) return;
@@ -799,9 +1034,8 @@ export class App implements Ctx {
       void alertBox(t('dlg.schemaFailed'), e instanceof SchemaError ? e.problems.join('\n') : String(e));
       return;
     }
-    this.schemaRaw = raw;
     this.doc.map.schema = { id: schema.id, version: schema.version };
-    this.doc.setMap(this.doc.map, schema);
+    this.doc.setMap(this.doc.map, schema, raw);
     this.autosave();
     toast(t('toast.schemaLoaded', { name: locText(schema.name, getLang(), name) }));
     void confirmBox(t('dlg.schemaLoadedTitle'), t('dlg.schemaLoadedText'), t('menu.newMap')).then((ok) => { if (ok) void this.newMap(); });
@@ -810,6 +1044,11 @@ export class App implements Ctx {
   /** Import modeli w dowolnym obsługiwanym formacie; każdy zamieniany na .glb. */
   async loadModels(): Promise<void> {
     const files = await openBinaryFiles(MODEL_ACCEPT);
+    if (!files.length) return;
+    await this.importModels(files);
+  }
+
+  private async importModels(files: Array<{ name: string; data: ArrayBuffer }>): Promise<void> {
     if (!files.length) return;
     toast(t('models.converting'));
     const { models, problems } = await importModelFiles(files);
@@ -846,7 +1085,7 @@ export class App implements Ctx {
       const models: Record<string, ArrayBuffer> = {};
       for (const [k, v] of this.models.fileData) models[k] = v;
       const savedAt = Date.now();
-      await writeAutosave({ schemaRaw: this.schemaRaw, mapJson: mapToJson(this.doc.map), savedAt, models, stamps: this.stamps.custom(), fileName: this.fileName });
+      await writeAutosave({ schemaRaw: this.doc.schemaRaw, mapJson: mapToJson(this.doc.map), savedAt, models, stamps: this.stamps.custom(), library: this.models.libraryJson(), fileName: this.fileName });
       this.savedAt = savedAt;
       this.renderStatus();
     } catch (e) {
@@ -888,12 +1127,13 @@ export class App implements Ctx {
 
   private renderLeft(): void {
     clear(this.el.tabs);
-    for (const tab of ['objects', 'terrain', 'list'] as LeftTab[])
+    for (const tab of ['objects', 'terrain', 'list', 'library'] as LeftTab[])
       this.el.tabs.append(
         h('button', { class: this.leftTab === tab ? 'active' : '', onclick: () => ((this.leftTab = tab), this.renderLeft()) }, t(`tab.${tab}`)),
       );
     if (this.leftTab === 'objects') renderPalette(this.el.left, this);
     else if (this.leftTab === 'terrain') renderTerrainPanel(this.el.left, this);
+    else if (this.leftTab === 'library') renderLibrary(this.el.left, this, this.thumbs, this.libraryState, this.libraryActions, () => this.renderLeft());
     else renderObjectList(this.el.left, this, this.listState, this.actions, () => this.renderLeft());
   }
 
@@ -953,8 +1193,11 @@ export class App implements Ctx {
         null,
         [t('menu.loadSchema'), '', () => void this.loadSchemaFile()],
         [t('menu.exampleSchema'), '', () => this.applySchema(structuredClone(exampleSchemaRaw), 'przyklad')],
+        [t('menu.downloadSchema'), '', () => this.downloadSchema()],
+        null,
         [t('menu.loadModels'), '', () => void this.loadModels()],
         [t('menu.downloadModels'), '', () => this.downloadModels()],
+        [t('menu.exportProject'), '', () => this.exportProject()],
       ]),
       h('span', { class: 'sep' }),
       btn('↶', t('tb.undo'), () => this.doc.undo(), false, !this.doc.history.canUndo, 'undo'),

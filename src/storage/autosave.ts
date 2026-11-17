@@ -10,6 +10,8 @@ export interface AutosaveData {
   models: Record<string, ArrayBuffer>;
   /** Własne stemple wysokości (nazwa pliku → obraz). */
   stamps?: Record<string, ArrayBuffer>;
+  /** Foldery biblioteki modeli (jak biblioteka.json w projekcie). */
+  library?: unknown;
   fileName?: string;
 }
 

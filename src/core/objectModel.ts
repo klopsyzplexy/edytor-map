@@ -64,3 +64,38 @@ export function usedModels(schema: Schema, objects: MapObject[]): string[] {
   }
   return [...out.values()];
 }
+
+/**
+ * „Zmień typ”: obiekt staje się obiektem innego typu (np. dekoracja → typ ze schematu i odwrotnie)
+ * z zachowaniem modelu, pozycji, obrotu i skali. Właściwości dostają wartości domyślne nowego typu,
+ * a te o tym samym id i rodzaju zostają. Tylko dla punktów i brył (ścieżka nie stanie się punktem).
+ */
+export function changeObjectType(schema: Schema, o: MapObject, typeId: string): void {
+  const from = getType(schema, o.type);
+  const to = getType(schema, typeId);
+  if (!to) throw new Error(`Nieznany typ obiektu: ${typeId}`);
+  if (o.points.length || to.kind === 'path' || to.kind === 'zone') throw new Error('Zmiana typu działa tylko dla punktów i brył.');
+  const old = objectModel(schema, o, from);
+  const props: MapObject['props'] = {};
+  for (const p of to.properties) {
+    const prev = from?.properties.find((x) => x.id === p.id && x.type === p.type);
+    props[p.id] = prev && o.props[p.id] !== undefined ? o.props[p.id] : p.default;
+  }
+  o.type = typeId;
+  o.props = props;
+  if (!old || sameModel(old.ref, to.look.model)) {
+    // ten sam model co w nowym typie (albo żadnego) – wystarczy model typu
+    delete o.model;
+    return;
+  }
+  o.model = old.ref;
+  // model typu miał tylko skalę – przenosimy ją na obiekt, żeby model się nie zmienił
+  const tr = old.transform;
+  if (old.transform !== IDENTITY_TRANSFORM && tr.rotation.every((x) => x === 0) && tr.offset.every((x) => x === 0))
+    o.scale = [o.scale[0] * tr.scale[0], o.scale[1] * tr.scale[1], o.scale[2] * tr.scale[2]];
+}
+
+/** Typy, na które można zmienić obiekt: dekoracja i typy ze schematu będące punktem albo bryłą. */
+export function changeableTypes(schema: Schema): ObjectTypeDef[] {
+  return [getType(schema, DECORATION)!, ...schema.objectTypes.filter((t) => t.kind === 'point' || t.kind === 'solid')];
+}

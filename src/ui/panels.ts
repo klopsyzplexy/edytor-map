@@ -1,7 +1,10 @@
 // Panele boczne: paleta obiektów, teren, lista obiektów, właściwości, walidacja.
 import type { Ctx } from '../context';
 import type { MapGroup, MapObject, Vec3 } from '../core/map';
-import { BUILTIN_TYPES, COLLISION_LINE, simplify, smoothPoints } from '../core/collision';
+import { BUILTIN_TYPES, COLLISION_LINE, DECORATION, simplify, smoothPoints } from '../core/collision';
+import { isBuiltinType } from '../core/builtinTypes';
+import { fileStem } from '../core/modelFiles';
+import { changeableTypes, modelRef, objectFlags, objectModel, sameModel } from '../core/objectModel';
 import { cellSize, heightAt } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
@@ -24,6 +27,12 @@ export interface Actions {
   focusObject(id: string): void;
   toggleHidden(ids: string[]): void;
   toggleLocked(ids: string[]): void;
+  /** „Zmień typ”: dekoracja ↔ typ ze schematu z zachowaniem modelu, pozycji, obrotu i skali. */
+  changeType(ids: string[], typeId: string): void;
+  /** Własny model obiektów (dekoracji); undefined – model typu. */
+  setObjectModel(ids: string[], model: string | undefined): void;
+  /** Okno „Model typu” (zmiana zapisuje się w schemacie). */
+  editTypeModel(typeId: string): void;
 }
 
 const L = (x: Parameters<typeof locText>[0], fb = '') => locText(x, getLang(), fb);
@@ -691,7 +700,8 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
         );
       }
     }
-    const flags = ty!.flags;
+    if (ty!.kind === 'point' || ty!.kind === 'solid') root.append(typeAndModel(ctx, sel, ty!, actions));
+    const flags = sel.length === 1 ? objectFlags(ty!, sel[0]) : ty!.flags;
     root.append(
       h(
         'p',
@@ -708,6 +718,59 @@ export function renderProps(root: HTMLElement, ctx: Ctx, issues: Issue[], action
       for (const p of ty!.properties) root.append(propField(ctx, p, sel, mine));
     }
   });
+}
+
+/** „Zmień typ” i model obiektu (własny albo z typu) z przyciskiem „Model typu…”. */
+function typeAndModel(ctx: Ctx, sel: MapObject[], ty: ObjectTypeDef, actions: Actions): HTMLElement {
+  const schema = ctx.doc.schema;
+  const ids = sel.map((o) => o.id);
+  const box = h('div', { class: 'type-model' });
+  const types = changeableTypes(schema);
+  box.append(
+    h(
+      'div',
+      { class: 'field' },
+      h('label', { title: t('props.changeTypeHint') }, t('props.changeType')),
+      h(
+        'select',
+        { 'data-key': 'changeType', onchange: (e: Event) => actions.changeType(ids, (e.target as HTMLSelectElement).value) },
+        ...types.map((x) => h('option', { value: x.id, selected: x.id === ty.id }, `${L(x.name, x.id)}${isBuiltinType(x.id) ? '' : ` · ${L(x.category)}`}`)),
+      ),
+    ),
+  );
+  const o = sel[0];
+  const om = objectModel(schema, o, ty);
+  const own = sel.every((x) => x.model === o.model) ? o.model : undefined;
+  const lib = ctx.models.fileNames;
+  if (ty.id === DECORATION || own) {
+    // własny model obiektu – wybór z biblioteki
+    const options = [...new Set([...(own ? [own] : []), ...lib.map(modelRef)])];
+    box.append(
+      h(
+        'div',
+        { class: 'field' },
+        h('label', {}, t('props.ownModel')),
+        h(
+          'select',
+          { 'data-key': 'ownModel', onchange: (e: Event) => actions.setObjectModel(ids, (e.target as HTMLSelectElement).value || undefined) },
+          h('option', { value: '' }, ty.id === DECORATION ? t('props.noModel') : t('props.typeModelOption')),
+          ...options.map((m) => h('option', { value: m, selected: sameModel(m, own) }, fileStem(m))),
+        ),
+      ),
+    );
+  }
+  if (!isBuiltinType(ty.id)) {
+    box.append(
+      h(
+        'div',
+        { class: 'model-row' },
+        h('span', { class: 'muted small grow' }, ty.look.model ? t('props.typeModel', { model: fileStem(ty.look.model) }) : t('props.typeNoModel')),
+        h('button', { title: t('props.typeModelHint'), onclick: () => actions.editTypeModel(ty.id) }, t('props.typeModelBtn')),
+      ),
+    );
+  }
+  if (om && ctx.models.state(om.ref) === 'error') box.append(h('p', { class: 'issue-inline warning' }, t('props.modelMissing', { model: fileStem(om.ref) })));
+  return box;
 }
 
 // ---------------- Walidacja ----------------

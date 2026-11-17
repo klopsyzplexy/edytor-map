@@ -17,6 +17,10 @@ export class ModelLibrary {
   private files = new Map<string, string>();
   /** Dane .glb modeli (klucz: nazwa.glb) – do zapisu roboczego i pobrania. */
   readonly fileData = new Map<string, ArrayBuffer>();
+  /** Folder modelu w bibliotece (klucz: nazwa.glb; brak = bez folderu). */
+  readonly folders = new Map<string, string>();
+  /** Licznik zmian pliku modelu (miniatury odświeżają się po podmianie). */
+  readonly versions = new Map<string, number>();
   onChange: () => void = () => {};
 
   /** Dodaje model .glb. Schemat znajduje go po nazwie pliku bez rozszerzenia (drzewo.fbx → drzewo.glb). */
@@ -26,8 +30,43 @@ export class ModelLibrary {
     if (old) URL.revokeObjectURL(old);
     this.files.set(key, URL.createObjectURL(new Blob([data], { type: 'model/gltf-binary' })));
     this.fileData.set(`${key}.glb`, data);
+    this.versions.set(`${key}.glb`, (this.versions.get(`${key}.glb`) ?? 0) + 1);
     // przeładuj modele, które wskazują na ten plik
     for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
+    this.onChange();
+  }
+
+  /** Usuwa model z biblioteki (obiekty, które go używają, pokażą zastępczą bryłę). */
+  remove(name: string): void {
+    const key = fileStem(name);
+    const url = this.files.get(key);
+    if (url) URL.revokeObjectURL(url);
+    this.files.delete(key);
+    this.fileData.delete(`${key}.glb`);
+    this.folders.delete(`${key}.glb`);
+    for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
+    this.onChange();
+  }
+
+  setFolder(name: string, folder: string): void {
+    const key = `${fileStem(name)}.glb`;
+    if (folder.trim()) this.folders.set(key, folder.trim());
+    else this.folders.delete(key);
+    this.onChange();
+  }
+
+  /** Foldery biblioteki do zapisu (plik biblioteka.json w projekcie i zapis roboczy). */
+  libraryJson(): { models: Array<{ file: string; folder?: string }> } {
+    return { models: this.fileNames.map((f) => ({ file: f, ...(this.folders.get(f) ? { folder: this.folders.get(f) } : {}) })) };
+  }
+
+  applyLibraryJson(j: unknown): void {
+    const list = typeof j === 'object' && j && Array.isArray((j as { models?: unknown }).models) ? (j as { models: unknown[] }).models : [];
+    for (const m of list) {
+      if (typeof m !== 'object' || !m) continue;
+      const { file, folder } = m as { file?: unknown; folder?: unknown };
+      if (typeof file === 'string' && typeof folder === 'string' && folder) this.folders.set(`${fileStem(file)}.glb`, folder);
+    }
     this.onChange();
   }
 

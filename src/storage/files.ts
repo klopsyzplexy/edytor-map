@@ -49,6 +49,26 @@ export async function openJsonFile(): Promise<OpenedFile | null> {
   return file ? { name: file.name, text: await file.text() } : null;
 }
 
+/** Otwiera mapę (.json) albo projekt (.zip). Dla .zip zwraca dane binarne zamiast tekstu. */
+export async function openMapFile(): Promise<(OpenedFile & { data?: ArrayBuffer }) | null> {
+  const read = async (file: File, handle?: FsHandle) =>
+    /\.zip$/i.test(file.name) ? { name: file.name, text: '', data: await file.arrayBuffer() } : { name: file.name, text: await file.text(), handle };
+  if (w.showOpenFilePicker) {
+    try {
+      const [handle] = await w.showOpenFilePicker({
+        types: [{ description: 'Mapa (JSON) / projekt (ZIP)', accept: { 'application/json': ['.json'], 'application/zip': ['.zip'] } }],
+        multiple: false,
+      });
+      return read(await handle.getFile(), handle);
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return null;
+      throw e;
+    }
+  }
+  const [file] = await inputPick('.json,.zip,application/json,application/zip', false);
+  return file ? read(file) : null;
+}
+
 export async function openBinaryFiles(accept: string): Promise<Array<{ name: string; data: ArrayBuffer }>> {
   const files = await inputPick(accept, true);
   return Promise.all(files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })));

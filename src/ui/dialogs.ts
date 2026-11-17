@@ -1,4 +1,5 @@
 // Okna dialogowe: komunikat, potwierdzenie, nowa mapa, pomoc, toasty.
+import type { ModelTransform } from '../core/schema';
 import { t } from '../i18n';
 import { h } from './dom';
 import { cheatSheet } from './shortcuts';
@@ -87,6 +88,79 @@ export async function newMapDialog(d: NewMapValues): Promise<NewMapValues | null
     resolution: Number(res.value),
     height: Number(height.value) || 0,
   };
+}
+
+/** Pole tekstowe w oknie; null, gdy anulowano. */
+export async function promptBox(title: string, label: string, value: string, hint?: string): Promise<string | null> {
+  const input = h('input', { type: 'text', value });
+  const v = await modal(title, h('div', { class: 'form' }, h('label', {}, label, input), hint ? h('p', { class: 'muted small' }, hint) : null), [
+    { label: t('btn.cancel'), value: 'no' },
+    { label: t('btn.ok'), primary: true, value: 'ok' },
+  ]);
+  return v === 'ok' ? input.value : null;
+}
+
+/** Wybór jednej z opcji (lista do wyboru); null, gdy anulowano. */
+export async function chooseBox(title: string, text: string, options: Array<{ value: string; label: string; group?: string }>, selected?: string): Promise<string | null> {
+  const select = h('select', { size: Math.min(12, options.length + 2), class: 'choose' });
+  const groups = new Map<string, HTMLElement>();
+  for (const o of options) {
+    const opt = h('option', { value: o.value, selected: o.value === selected }, o.label);
+    if (!o.group) select.append(opt);
+    else {
+      if (!groups.has(o.group)) select.append(groups.set(o.group, h('optgroup', { label: o.group })).get(o.group)!);
+      groups.get(o.group)!.append(opt);
+    }
+  }
+  if (!select.value && options.length) select.value = options[0].value;
+  select.addEventListener('dblclick', () => (document.querySelector('.modal .modal-buttons .primary') as HTMLElement | null)?.click());
+  const v = await modal(title, h('div', { class: 'form' }, h('p', {}, text), select), [
+    { label: t('btn.cancel'), value: 'no' },
+    { label: t('btn.ok'), primary: true, value: 'ok' },
+  ]);
+  return v === 'ok' ? select.value : null;
+}
+
+export interface ModelChoice {
+  model: string | undefined;
+  transform: ModelTransform;
+}
+
+/**
+ * Okno „Model typu” / „Model postaci”: wybór modelu z biblioteki (albo brak – prosta bryła lub kapsuła)
+ * i jego ułożenie względem punktu obiektu: skala, obrót (stopnie) i przesunięcie.
+ */
+export async function modelDialog(title: string, intro: string, models: string[], current: ModelChoice, noneLabel: string): Promise<ModelChoice | null> {
+  const list = [...new Set([...(current.model ? [current.model] : []), ...models])];
+  const select = h('select', {}, h('option', { value: '' }, noneLabel), ...list.map((m) => h('option', { value: m, selected: m === current.model }, m)));
+  const vec = (label: string, v: number[], step: number) => {
+    const inputs = v.map((x) => h('input', { type: 'number', step, value: x }));
+    return { row: h('div', { class: 'vec' }, h('span', {}, label), ...['X', 'Y', 'Z'].map((a, k) => h('label', {}, a, inputs[k]))), read: () => inputs.map((i, k) => (Number.isFinite(Number(i.value)) && i.value !== '' ? Number(i.value) : v[k])) as [number, number, number] };
+  };
+  const tr = current.transform;
+  const uniform = tr.scale[0] === tr.scale[1] && tr.scale[1] === tr.scale[2];
+  const scaleOne = h('input', { type: 'number', step: 0.1, min: 0.0001, value: tr.scale[0] });
+  const scale3 = vec(t('modelDlg.scale'), tr.scale, 0.1);
+  const one = h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: uniform, onchange: () => sync() }), t('modelDlg.uniform'));
+  const scaleRow = h('label', { class: 'inline' }, t('modelDlg.scale'), scaleOne);
+  const sync = () => {
+    const on = (one.querySelector('input') as HTMLInputElement).checked;
+    scaleRow.style.display = on ? '' : 'none';
+    scale3.row.style.display = on ? 'none' : '';
+  };
+  const rot = vec(t('modelDlg.rotation'), tr.rotation, 5);
+  const off = vec(t('modelDlg.offset'), tr.offset, 0.1);
+  const body = h('div', { class: 'form' }, h('p', { class: 'muted small' }, intro), h('label', {}, t('modelDlg.model'), select), one, scaleRow, scale3.row, rot.row, off.row, h('p', { class: 'muted small' }, t('modelDlg.hint')));
+  sync();
+  const v = await modal(title, body, [
+    { label: t('btn.cancel'), value: 'no' },
+    { label: t('btn.ok'), primary: true, value: 'ok' },
+  ]);
+  if (v !== 'ok') return null;
+  const on = (one.querySelector('input') as HTMLInputElement).checked;
+  const k = Math.max(0.0001, Number(scaleOne.value) || 1);
+  const scale = on ? ([k, k, k] as [number, number, number]) : (scale3.read().map((x) => Math.max(0.0001, x || 1)) as [number, number, number]);
+  return { model: select.value || undefined, transform: { scale, rotation: rot.read(), offset: off.read() } };
 }
 
 /** Ściąga skrótów (klawisz ? albo F1) – treść z ui/shortcuts.ts. */

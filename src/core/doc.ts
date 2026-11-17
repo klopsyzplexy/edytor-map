@@ -1,9 +1,10 @@
 // Dokument edytora: schemat + mapa + zaznaczenie + historia. Każda zmiana przechodzi przez tę klasę,
 // dzięki czemu działa cofnij/ponów i odświeżanie widoków. Bez DOM i Three.js.
 import { History } from './history';
-import { cloneObject, createObject, modelKey, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Vec3 } from './map';
+import { cloneObject, createObject, modelKey, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Terrain, type Vec3 } from './map';
 import { fileStem } from './modelFiles';
 import { objectModel } from './objectModel';
+import type { ResizeResult } from './resize';
 import { getType, parseSchema, type Schema } from './schema';
 import { copyRect, pasteRect, unionRect, type Rect } from './terrain';
 
@@ -394,6 +395,35 @@ export class EditorDoc {
       },
     });
     this.emit('settings');
+    this.touched();
+  }
+
+  /**
+   * Zmiana rozmiaru mapy (teren, rozmiar, rozdzielczość i położenia obiektów) jako jeden krok historii.
+   * Po zmianie i przy cofaniu widoki budują się od nowa (zdarzenie `map`).
+   */
+  resize(r: ResizeResult): void {
+    type State = { size: [number, number]; resolution: [number, number]; terrain: Terrain; objects: MapObject[] };
+    const take = (): State => ({
+      size: [...this.map.settings.size],
+      resolution: [...this.map.settings.resolution],
+      terrain: this.map.terrain,
+      objects: this.map.objects.map(cloneObject),
+    });
+    const before = take();
+    const after: State = { size: [...r.size], resolution: [r.terrain.nx, r.terrain.nz], terrain: r.terrain, objects: r.objects.map(cloneObject) };
+    const apply = (st: State) => {
+      this.map.settings.size = [...st.size];
+      this.map.settings.resolution = [...st.resolution];
+      // teren podmieniany w całości (tablice nie są potem zmieniane w miejscu przez historię – pędzel kopiuje fragmenty)
+      this.map.terrain = { nx: st.terrain.nx, nz: st.terrain.nz, heights: st.terrain.heights.slice(), layers: Object.fromEntries(Object.entries(st.terrain.layers).map(([k, v]) => [k, v.slice()])) };
+      this.map.objects = st.objects.map(cloneObject);
+      this.emit('map');
+    };
+    this.history.push({ label: 'resize', undo: () => apply(before), redo: () => apply(after) });
+    // migawka „przed” musi być niezależna od tablic, które pędzel zmienia w miejscu
+    before.terrain = { ...before.terrain, heights: before.terrain.heights.slice(), layers: Object.fromEntries(Object.entries(before.terrain.layers).map(([k, v]) => [k, v.slice()])) };
+    apply(after);
     this.touched();
   }
 

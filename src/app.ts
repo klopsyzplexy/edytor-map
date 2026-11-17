@@ -6,6 +6,7 @@ import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/for
 import { cloneObject, createMap, heightAt, modelKey, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type ScaleCategory, type Schema } from './core/schema';
 import { guessCategory } from './core/scaleNormalize';
+import { RESIZE_WARN_POINTS, resizedResolution, resizeMap } from './core/resize';
 import { collectCollision, COLLISION_LINE, computeBlockedMask } from './core/collision';
 import { changeObjectType, modelRef, usedModels } from './core/objectModel';
 import { DECORATION } from './core/builtinTypes';
@@ -35,10 +36,10 @@ import { loadAutosave, writeAutosave } from './storage/autosave';
 import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, openMapFile, saveTextFile, type FsHandle } from './storage/files';
 import { StampLibrary } from './tools/stamps';
 import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
-import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, normalizeDialog, promptBox, toast, type NormalizeRow } from './ui/dialogs';
+import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, normalizeDialog, promptBox, resizeDialog, toast, type NormalizeRow } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
-import { formatMeters } from './ui/units';
+import { formatMeters, formatNum } from './ui/units';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
 type LeftTab = 'objects' | 'terrain' | 'list' | 'library';
@@ -544,6 +545,24 @@ export class App implements Ctx {
       })();
       if (handled) e.preventDefault();
     });
+  }
+
+  /** Mapa → Zmień rozmiar…: rozszerz albo rozciągnij (jeden krok cofania). */
+  private async resizeMap(): Promise<void> {
+    const map = this.doc.map;
+    const L = (x: Parameters<typeof locText>[0], fb: string) => locText(x, getLang(), fb);
+    const o = await resizeDialog({
+      size: map.settings.size,
+      pointsFor: (w, d) => Math.max(...resizedResolution(map, w, d)),
+      gridFor: (w, d, p) => resizedResolution(map, w, d, p),
+      warnPoints: RESIZE_WARN_POINTS,
+      layers: this.doc.schema.terrainLayers.map((l) => ({ id: l.id, name: L(l.name, l.id) })),
+      fillHeight: this.doc.schema.mapDefaults.height,
+    });
+    if (!o) return;
+    const n = map.objects.length;
+    this.doc.resize(resizeMap(this.doc.schema, map, o));
+    toast(t('toast.resized', { w: formatNum(o.width), d: formatNum(o.depth), n }));
   }
 
   /** M: manekin postaci przy kursorze i obok zaznaczenia. */
@@ -1260,6 +1279,7 @@ export class App implements Ctx {
         [t('menu.downloadModels'), '', () => this.downloadModels()],
         [t('menu.exportProject'), '', () => this.exportProject()],
       ]),
+      menu(t('menu.map'), [[t('menu.resize'), '', () => void this.resizeMap()]]),
       h('span', { class: 'sep' }),
       btn('↶', t('tb.undo'), () => this.doc.undo(), false, !this.doc.history.canUndo, 'undo'),
       btn('↷', t('tb.redo'), () => this.doc.redo(), false, !this.doc.history.canRedo, 'redo'),

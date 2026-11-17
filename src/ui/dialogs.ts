@@ -1,5 +1,6 @@
 // Okna dialogowe: komunikat, potwierdzenie, nowa mapa, pomoc, toasty.
 import type { Vec3 } from '../core/map';
+import type { ResizeAnchor, ResizeMode, ResizeOptions } from '../core/resize';
 import { proposeBaseScale } from '../core/scaleNormalize';
 import type { ModelTransform, ScaleCategory, ScaleMeasure, WorldScale } from '../core/schema';
 import { t } from '../i18n';
@@ -271,4 +272,135 @@ export async function normalizeDialog(rows: NormalizeRow[], scale: WorldScale, c
     { label: t('norm.apply'), primary: true, value: 'ok' },
   ], true);
   return v === 'ok' ? readers.map((f) => f()) : null;
+}
+
+export interface ResizeDialogInput {
+  size: [number, number];
+  /** Punkty siatki na dłuższym boku przy obecnej gęstości dla podanego rozmiaru. */
+  pointsFor: (w: number, d: number) => number;
+  /** Liczba punktów siatki dla rozmiaru i punktów na dłuższym boku. */
+  gridFor: (w: number, d: number, points: number) => [number, number];
+  warnPoints: number;
+  layers: Array<{ id: string; name: string }>;
+  fillHeight: number;
+}
+
+/** Mapa → Zmień rozmiar…: nowa szerokość i długość (także w procentach), kotwica, tryb, warstwa nowego terenu. */
+export async function resizeDialog(d: ResizeDialogInput): Promise<ResizeOptions | null> {
+  const [w0, d0] = d.size;
+  const num = (v: number, step = 1) => h('input', { type: 'number', min: 1, step, value: v, class: 'short' }) as HTMLInputElement;
+  const w = num(w0);
+  const dd = num(d0);
+  const pw = num(100);
+  const pd = num(100);
+  const lock = h('input', { type: 'checkbox', checked: true }) as HTMLInputElement;
+  const points = num(d.pointsFor(w0, d0));
+  let pointsTouched = false;
+  let anchor: ResizeAnchor = 'center';
+  const anchorBtns = new Map<ResizeAnchor, HTMLButtonElement>();
+  const anchorGrid = h('div', { class: 'anchor-grid' });
+  const cells: Array<ResizeAnchor | null> = ['nw', null, 'ne', null, 'center', null, 'sw', null, 'se'];
+  for (const a of cells) {
+    if (!a) {
+      anchorGrid.append(h('span'));
+      continue;
+    }
+    const b = h('button', { type: 'button', title: t(`resize.anchor.${a}`), onclick: () => ((anchor = a), sync()) }, '●') as HTMLButtonElement;
+    anchorBtns.set(a, b);
+    anchorGrid.append(b);
+  }
+  const mode = h('select', {}, h('option', { value: 'expand' }, t('resize.expand')), h('option', { value: 'stretch' }, t('resize.stretch'))) as HTMLSelectElement;
+  const layer = h('select', {}, ...d.layers.map((l) => h('option', { value: l.id }, l.name))) as HTMLSelectElement;
+  const fillH = num(d.fillHeight, 0.1);
+  fillH.min = '';
+  const info = h('p', { class: 'small' });
+  const modeHint = h('p', { class: 'muted small' });
+  const fillRow = h('div', { class: 'inline' }, h('label', {}, t('resize.fillLayer'), layer), h('label', {}, t('resize.fillHeight'), fillH));
+  const sync = () => {
+    for (const [a, b] of anchorBtns) b.classList.toggle('active', a === anchor);
+    const expand = mode.value === 'expand';
+    fillRow.style.display = expand ? '' : 'none';
+    anchorGrid.style.opacity = expand ? '1' : '0.4';
+    modeHint.textContent = t(expand ? 'resize.expandHint' : 'resize.stretchHint');
+    const W = Number(w.value) || w0;
+    const D = Number(dd.value) || d0;
+    if (!pointsTouched) points.value = String(d.pointsFor(W, D));
+    const [nx, nz] = d.gridFor(W, D, Number(points.value) || 2);
+    info.textContent = t('resize.grid', { nx, nz, cell: formatNum(W / (nx - 1), 3) });
+    if (nx * nz > d.warnPoints) info.append(h('span', { class: 'issue-inline warning' }, ' ' + t('resize.warn', { n: formatNum(d.warnPoints, 0) })));
+  };
+  const fromPct = (src: HTMLInputElement, dst: HTMLInputElement, base: number) => {
+    dst.value = String(Math.round(((Number(src.value) || 100) * base) / 100 * 1000) / 1000);
+  };
+  pw.oninput = () => {
+    fromPct(pw, w, w0);
+    if (lock.checked) {
+      pd.value = pw.value;
+      fromPct(pd, dd, d0);
+    }
+    sync();
+  };
+  pd.oninput = () => {
+    fromPct(pd, dd, d0);
+    if (lock.checked) {
+      pw.value = pd.value;
+      fromPct(pw, w, w0);
+    }
+    sync();
+  };
+  w.oninput = () => {
+    pw.value = String(Math.round(((Number(w.value) || w0) / w0) * 1000) / 10);
+    if (lock.checked) {
+      pd.value = pw.value;
+      fromPct(pd, dd, d0);
+    }
+    sync();
+  };
+  dd.oninput = () => {
+    pd.value = String(Math.round(((Number(dd.value) || d0) / d0) * 1000) / 10);
+    if (lock.checked) {
+      pw.value = pd.value;
+      fromPct(pw, w, w0);
+    }
+    sync();
+  };
+  points.oninput = () => {
+    pointsTouched = true;
+    sync();
+  };
+  mode.onchange = sync;
+  const body = h(
+    'div',
+    { class: 'form resize' },
+    h('p', { class: 'muted small' }, t('resize.now', { w: formatNum(w0), d: formatNum(d0) })),
+    h('div', { class: 'resize-grid' },
+      h('span', {}, t('resize.width')), w, pw, h('span', { class: 'muted' }, '%'),
+      h('span', {}, t('resize.depth')), dd, pd, h('span', { class: 'muted' }, '%'),
+    ),
+    h('label', { class: 'check' }, lock, t('resize.lock')),
+    h('label', {}, t('resize.mode'), mode),
+    modeHint,
+    h('div', { class: 'inline' }, h('span', {}, t('resize.anchor')), anchorGrid),
+    fillRow,
+    h('label', { title: t('resize.pointsHint') }, t('resize.points'), points),
+    info,
+  );
+  sync();
+  const v = await modal(t('resize.title'), body, [
+    { label: t('btn.cancel'), value: 'no' },
+    { label: t('resize.ok'), primary: true, value: 'ok' },
+  ]);
+  if (v !== 'ok') return null;
+  const W = Number(w.value);
+  const D = Number(dd.value);
+  if (!(W > 0) || !(D > 0)) return null;
+  return {
+    width: W,
+    depth: D,
+    mode: mode.value as ResizeMode,
+    anchor,
+    fillLayer: layer.value,
+    fillHeight: Number(fillH.value) || 0,
+    resolution: pointsTouched ? Number(points.value) || undefined : undefined,
+  };
 }

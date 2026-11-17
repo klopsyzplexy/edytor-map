@@ -217,3 +217,8 @@ input.short { width: 64px; }
 .variation .vec input { width: 56px; }
 .size-row { margin: 4px 0 6px; }
 .size-row .lbl { opacity: 0.8; }
+.resize-grid { display: grid; grid-template-columns: auto 90px 70px auto; gap: 6px; align-items: center; }
+.anchor-grid { display: inline-grid; grid-template-columns: repeat(3, 26px); gap: 2px; margin-left: 8px; vertical-align: middle; }
+.anchor-grid button { width: 26px; height: 22px; padding: 0; font-size: 10px; opacity: 0.45; }
+.anchor-grid button.active { opacity: 1; outline: 2px solid var(--accent, #4f8cff); }
+.form .inline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }

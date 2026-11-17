@@ -40,11 +40,11 @@ function primitiveTopTriangles(size: Vec3, shape: string): Vec3[] {
   ];
 }
 
-export function objectWalkable(schema: Schema, o: MapObject, models?: ModelWalkableProvider): WalkableSurface | null {
+export function objectWalkable(schema: Schema, o: MapObject, models?: ModelWalkableProvider, map?: Pick<MapData, 'models'>): WalkableSurface | null {
   const t = getType(schema, o.type);
   if (!t || !objectFlags(t, o).walkable || o.points.length > 0) return null;
   const triangles: number[] = [];
-  const model = objectModel(schema, o, t);
+  const model = objectModel(schema, o, t, map);
   const fromModel = model && models ? models(model.ref) : null;
   if (model && fromModel) {
     for (let k = 0; k + 2 < fromModel.length; k += 3)
@@ -60,7 +60,7 @@ export function objectWalkable(schema: Schema, o: MapObject, models?: ModelWalka
 export function collectWalkable(schema: Schema, map: MapData, models?: ModelWalkableProvider): WalkableSurface[] {
   const out: WalkableSurface[] = [];
   for (const o of map.objects) {
-    const s = objectWalkable(schema, o, models);
+    const s = objectWalkable(schema, o, models, map);
     if (s) out.push(s);
   }
   return out;

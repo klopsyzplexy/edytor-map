@@ -1,7 +1,7 @@
 // Model i flagi konkretnego obiektu: model typu ze schematu albo własny model obiektu (dekoracje,
 // obiekty po „Zmień typ”); flagi dekoracji ustawiane przy obiekcie. Czyste funkcje, bez Three.js.
 import { DECORATION } from './builtinTypes';
-import type { MapObject, Vec3 } from './map';
+import { modelBaseScale, type MapData, type MapObject, type Vec3 } from './map';
 import { localToWorld, rotateXYZ } from './math';
 import { fileStem } from './modelFiles';
 import { getType, IDENTITY_TRANSFORM, type ModelTransform, type ObjectFlags, type ObjectTypeDef, type Schema } from './schema';
@@ -31,11 +31,25 @@ export interface ObjectModel {
   transform: ModelTransform;
 }
 
-/** Model, którym obiekt jest pokazany, albo null (prosta bryła z `look.shape`). */
-export function objectModel(schema: Schema, o: MapObject, t: ObjectTypeDef | undefined = getType(schema, o.type)): ObjectModel | null {
-  if (o.model) return { ref: o.model, transform: IDENTITY_TRANSFORM };
-  if (t?.look.model) return { ref: t.look.model, transform: t.look.modelTransform };
+/**
+ * Model, którym obiekt jest pokazany, albo null (prosta bryła z `look.shape`). Gdy podano mapę, ułożenie
+ * zawiera też skalę bazową modelu z `map.models` (mnoży punkty modelu przed ułożeniem z typu).
+ */
+export function objectModel(
+  schema: Schema,
+  o: MapObject,
+  t: ObjectTypeDef | undefined = getType(schema, o.type),
+  map?: Pick<MapData, 'models'>,
+): ObjectModel | null {
+  if (o.model) return { ref: o.model, transform: withBaseScale(IDENTITY_TRANSFORM, modelBaseScale(map, o.model)) };
+  if (t?.look.model) return { ref: t.look.model, transform: withBaseScale(t.look.modelTransform, modelBaseScale(map, t.look.model)) };
   return null;
+}
+
+/** Ułożenie modelu ze skalą bazową (jednolitą): offset + R · (scale · base · p). */
+export function withBaseScale(m: ModelTransform, base: number): ModelTransform {
+  if (base === 1) return m;
+  return { offset: m.offset, rotation: m.rotation, scale: [m.scale[0] * base, m.scale[1] * base, m.scale[2] * base] };
 }
 
 /** Punkt w układzie pliku modelu → układ obiektu (skala, obrót, przesunięcie modelu). */

@@ -5,6 +5,7 @@
 // Teren to siatka nx × nz wierzchołków; wierzchołek (i, j) leży w (i·width/(nx−1), j·depth/(nz−1)),
 // a jego indeks w tablicach to j·nx + i.
 
+import { fileStem } from './modelFiles';
 import { defaultProps, getType, type PropValue, type Schema } from './schema';
 
 export type Vec3 = [number, number, number];
@@ -57,12 +58,35 @@ export interface Terrain {
   layers: Record<string, Uint8Array>;
 }
 
+/** Ustawienia modelu w mapie (od formatu 4). */
+export interface ModelSettings {
+  /** Skala bazowa modelu (normalizacja do rozmiaru w metrach); działa na wszystkie kopie modelu. */
+  baseScale: number;
+}
+
 export interface MapData {
   schema: { id: string; version: string };
   settings: MapSettings;
   terrain: Terrain;
   groups: MapGroup[];
   objects: MapObject[];
+  /** Ustawienia modeli używanych w mapie; klucz = odwołanie, np. "modele/beczka.glb". */
+  models: Record<string, ModelSettings>;
+}
+
+
+/** Klucz ustawień modelu w `map.models` pasujący do odwołania (porównanie po nazwie pliku bez rozszerzenia). */
+export function modelKey(map: Pick<MapData, 'models'>, ref: string): string | undefined {
+  if (ref in map.models) return ref;
+  const s = fileStem(ref);
+  return Object.keys(map.models).find((k) => fileStem(k) === s);
+}
+
+/** Skala bazowa modelu w mapie (1, gdy nie ustawiono). */
+export function modelBaseScale(map: Pick<MapData, 'models'> | undefined, ref: string): number {
+  if (!map) return 1;
+  const k = modelKey(map, ref);
+  return k ? map.models[k].baseScale : 1;
 }
 
 export interface NewMapOptions {
@@ -93,6 +117,7 @@ export function createMap(schema: Schema, o: NewMapOptions): MapData {
     terrain: { nx, nz, heights, layers },
     groups: [],
     objects: [],
+    models: {},
   };
 }
 

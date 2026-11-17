@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import type { Ctx } from '../context';
 import { collectCollision, COLLISION_LINE, COLLISION_ZONE, type CollisionShape } from '../core/collision';
-import { heightAt, type Vec3 } from '../core/map';
+import { heightAt, modelBaseScale, type Vec3 } from '../core/map';
+import { withBaseScale } from '../core/objectModel';
 import { buildPlayWorld, pickAnimations, slopeDegAt, spawnAt, stepPlayer, type PlayerState, type PlayWorld, type StepResult } from '../core/play';
 import { getType, locText } from '../core/schema';
 import { raycastTerrain } from '../core/terrain';
@@ -268,7 +269,7 @@ export class PlayMode {
     if (pl.model && anim) {
       this.charModelRef = pl.model;
       const holder = new THREE.Group();
-      const tr = pl.modelTransform;
+      const tr = withBaseScale(pl.modelTransform, modelBaseScale(doc.map, pl.model));
       holder.position.set(...tr.offset);
       holder.rotation.set(tr.rotation[0] * D2R, tr.rotation[1] * D2R, tr.rotation[2] * D2R, 'XYZ');
       holder.scale.set(...tr.scale);

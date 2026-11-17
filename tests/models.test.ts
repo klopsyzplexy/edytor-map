@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import raw from '../examples/schemat-przyklad.json';
 import { collectCollision, computeBlockedMask, DECORATION } from '../src/core/collision';
 import { EditorDoc } from '../src/core/doc';
-import { deserializeMap, mapToJson, parseMap, serializeMap } from '../src/core/format';
+import { deserializeMap, FORMAT_VERSION, mapToJson, parseMap, serializeMap } from '../src/core/format';
 import { createMap } from '../src/core/map';
 import { modelRef, objectFlags, objectModel, usedModels } from '../src/core/objectModel';
 import { getType, parseSchema } from '../src/core/schema';
@@ -127,7 +127,7 @@ describe('format mapy 3', () => {
     doc.updateObjects([a.id], (o) => (o.model = 'modele/beczka.glb'));
     const json = mapToJson(map, { models: usedModels(s, map.objects) });
     const f = JSON.parse(json);
-    expect(f.formatVersion).toBe(3);
+    expect(f.formatVersion).toBe(FORMAT_VERSION);
     expect(f.objects[0].model).toBe('modele/beczka.glb');
     expect('model' in f.objects[1]).toBe(false);
     expect(f.derived.models).toEqual(['modele/beczka.glb']);
@@ -143,5 +143,77 @@ describe('format mapy 3', () => {
     const f = serializeMap(map) as unknown as Record<string, unknown>;
     f.formatVersion = 2;
     expect(deserializeMap(f).objects).toEqual(map.objects);
+  });
+});
+
+describe('format mapy 4: skala bazowa modelu i mnożnik obiektu', () => {
+  const setup = () => {
+    const s = exampleSchema();
+    const map = createMap(s, { name: 'm', size: [16, 16], resolution: 17, height: 0 });
+    return { s, map, doc: new EditorDoc(s, map) };
+  };
+  const box = () => ({ min: [-1, 0, -1] as [number, number, number], max: [1, 2, 1] as [number, number, number] });
+
+  it('migracja 3 → 4: pusta sekcja models, mapa bez zmian', () => {
+    const { map, doc } = setup();
+    const o = doc.addObject(DECORATION, [5, 0, 5]);
+    doc.updateObjects([o.id], (x) => (x.model = 'modele/beczka.glb'));
+    const f = serializeMap(map) as unknown as Record<string, unknown>;
+    f.formatVersion = 3;
+    delete f.models;
+    const back = deserializeMap(f);
+    expect(back.models).toEqual({});
+    expect(back.objects).toEqual(map.objects);
+  });
+
+  it('skala bazowa: zapis → odczyt, wszystkie kopie modelu, mnożnik obiektu osobno', () => {
+    const { s, map, doc } = setup();
+    const a = doc.addObject(DECORATION, [4, 0, 4]);
+    const b = doc.addObject(DECORATION, [10, 0, 10]);
+    doc.updateObjects([a.id, b.id], (x) => (x.model = 'modele/beczka.glb'));
+    doc.updateObjects([b.id], (x) => (x.scale = [2, 2, 2]));
+    doc.setModelBaseScale('modele/beczka.glb', 0.5);
+    const json = mapToJson(map);
+    expect(JSON.parse(json).models).toEqual({ 'modele/beczka.glb': { baseScale: 0.5 } });
+    expect(parseMap(json).models).toEqual(map.models);
+    // obrys kolizji: pudełko 2×2 × skala bazowa 0,5 × mnożnik (1 albo 2)
+    const width = (id: string) => {
+      const o = map.objects.find((x) => x.id === id)!;
+      o.props.collision = true;
+      const sh = collectCollision(s, map, box).find((c) => c.objectId === id)!;
+      const xs = sh.points.map((p) => p[0]);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    expect(width(a.id)).toBeCloseTo(1);
+    expect(width(b.id)).toBeCloseTo(2);
+    expect(objectModel(s, map.objects[0], undefined, map)!.transform.scale).toEqual([0.5, 0.5, 0.5]);
+    doc.undo();
+    expect(map.models).toEqual({});
+    expect(width(a.id)).toBeCloseTo(2);
+  });
+
+  it('skala bazowa modelu typu mnoży ułożenie z typu', () => {
+    const { s, map, doc } = setup();
+    const k = doc.addObject('kladka', [8, 0, 8]);
+    doc.setModelBaseScale('kladka.glb', 3);
+    expect(Object.keys(map.models)).toEqual(['kladka.glb']);
+    expect(objectModel(s, map.objects.find((o) => o.id === k.id)!, undefined, map)!.transform.scale).toEqual([3, 3, 3]);
+  });
+
+  it('nowy obiekt z modelem nieznanym mapie dostaje skalę z biblioteki (w tym samym kroku cofania)', () => {
+    const { map, doc } = setup();
+    doc.modelDefaults = (ref) => (ref.includes('kladka') ? 0.25 : undefined);
+    doc.addObject('kladka', [8, 0, 8]);
+    expect(map.models).toEqual({ 'modele/kladka.glb': { baseScale: 0.25 } });
+    doc.undo();
+    expect(map.models).toEqual({});
+    expect(map.objects).toEqual([]);
+  });
+
+  it('zła skala bazowa w pliku → błąd', () => {
+    const { map } = setup();
+    const f = serializeMap(map) as unknown as Record<string, unknown>;
+    f.models = { 'modele/x.glb': { baseScale: -1 } };
+    expect(() => deserializeMap(f)).toThrow(/baseScale/);
   });
 });

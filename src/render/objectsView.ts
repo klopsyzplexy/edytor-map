@@ -75,7 +75,7 @@ export class ObjectsView {
       const t = getType(this.doc.schema, o.type);
       const guide = this.guides && !!t && (t.kind === 'path' || t.kind === 'zone') && !isBuiltinType(t.id);
       const visible = this.doc.isVisible(o) && !(this.gameView && t && !t.flags.visibleInGame && !guide);
-      const m = objectModel(this.doc.schema, o, t);
+      const m = objectModel(this.doc.schema, o, t, this.doc.map);
       const sig = JSON.stringify([o.type, o.position, o.rotation, o.scale, o.points, visible, m, m ? this.models.state(m.ref) : 0]);
       const cur = this.items.get(o.id);
       if (cur && cur.sig === sig && !force) continue;
@@ -112,7 +112,7 @@ export class ObjectsView {
     g.position.set(...o.position);
     g.rotation.set(o.rotation[0] * D2R, o.rotation[1] * D2R, o.rotation[2] * D2R, 'XYZ');
     g.scale.set(...o.scale);
-    const om = objectModel(this.doc.schema, o, t);
+    const om = objectModel(this.doc.schema, o, t, this.doc.map);
     const model = om ? this.models.instance(om.ref) : null;
     if (model && om) {
       // ułożenie modelu względem punktu obiektu (z typu; własny model obiektu stoi bez zmian)

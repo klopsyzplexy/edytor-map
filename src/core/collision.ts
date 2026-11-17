@@ -111,8 +111,8 @@ const SEG = 16;
  * Obrys bryły z flagą kolizji widziany z góry (po obrocie i skali). Dla modelu – pudełko modelu
  * (gdy `bounds` je zna), a bez niego pudełko `defaultSize`.
  */
-export function solidFootprint(t: ObjectTypeDef, o: MapObject, bounds?: ModelBoundsProvider, schema?: Schema): Array<[number, number]> {
-  const model = schema ? objectModel(schema, o, t) : t.look.model ? { ref: t.look.model, transform: t.look.modelTransform } : null;
+export function solidFootprint(t: ObjectTypeDef, o: MapObject, bounds?: ModelBoundsProvider, schema?: Schema, map?: Pick<MapData, 'models'>): Array<[number, number]> {
+  const model = schema ? objectModel(schema, o, t, map) : t.look.model ? { ref: t.look.model, transform: t.look.modelTransform } : null;
   const box = model && bounds ? bounds(model.ref) : null;
   if (model && box) {
     const pts: Array<[number, number]> = [];
@@ -147,7 +147,7 @@ export function collectCollision(schema: Schema, map: MapData, bounds?: ModelBou
     } else if (t.kind === 'path') {
       const width = typeof o.props.width === 'number' && o.props.width > 0 ? o.props.width : 1;
       if (xz.length >= 2) out.push({ objectId: o.id, type: o.type, shape: 'line', points: xz, width });
-    } else out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: solidFootprint(t, o, bounds, schema) });
+    } else out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: solidFootprint(t, o, bounds, schema, map) });
   }
   return out;
 }

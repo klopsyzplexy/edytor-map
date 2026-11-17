@@ -1,6 +1,6 @@
 // Format pliku mapy (JSON). Opis dla twórców gier: docs/formaty.md.
 import { decodeF32, decodeU8, encodeF32, encodeU8 } from './binary';
-import type { MapData, MapGroup, MapObject, Vec3 } from './map';
+import type { MapData, MapGroup, MapObject, ModelSettings, Vec3 } from './map';
 import type { PropValue } from './schema';
 import type { CollisionShape } from './collision';
 import type { WalkableSurface } from './walkable';
@@ -8,9 +8,10 @@ import type { WalkableSurface } from './walkable';
 export const FORMAT_ID = 'edytor-map';
 /**
  * Historia: 1 – pierwsza wersja (0.1.0); 2 – grupy z podgrupami (`parent`), `derived.collision` (0.2.0);
- * 3 – własny model obiektu (`objects[].model`), dekoracje `@decoration`, `derived.models` (0.3.0).
+ * 3 – własny model obiektu (`objects[].model`), dekoracje `@decoration`, `derived.models` (0.3.0);
+ * 4 – ustawienia modeli `models` (skala bazowa; `objects[].scale` to mnożnik obiektu) (0.4.0).
  */
-export const FORMAT_VERSION = 3;
+export const FORMAT_VERSION = 4;
 
 /** Dane wyliczane przy eksporcie dla gry; przy wczytywaniu są pomijane (edytor liczy je od nowa). */
 export interface MapDerived {
@@ -39,6 +40,7 @@ export interface MapFileJson {
   };
   groups: MapGroup[];
   objects: Array<Omit<MapObject, 'points'> & { points?: Vec3[] }>;
+  models: Record<string, ModelSettings>;
   derived?: {
     blocked?: string;
     walkable?: WalkableSurface[];
@@ -72,6 +74,7 @@ export function serializeMap(map: MapData, derived?: MapDerived, editorVersion?:
       if (!o.model) delete out.model;
       return out;
     }),
+    models: Object.fromEntries(Object.entries(map.models).map(([k, v]) => [k, { ...v }])),
   };
   if (derived && (derived.blocked || derived.walkable || derived.collision || derived.models)) {
     file.derived = {};
@@ -97,6 +100,8 @@ const MIGRATIONS: Record<number, (f: Obj) => Obj> = {
   1: (f) => ({ ...f, formatVersion: 2, groups: (Array.isArray(f.groups) ? f.groups : []).map((g) => (isObj(g) ? { ...g, parent: null } : g)) }),
   // 2 → 3: nowe pola są opcjonalne (`objects[].model`, `derived.models`), typ `@decoration` – bez zmian w danych
   2: (f) => ({ ...f, formatVersion: 3 }),
+  // 3 → 4: nowa sekcja `models` (skala bazowa modeli = 1, więc mapa wygląda tak samo; `scale` obiektu = mnożnik)
+  3: (f) => ({ ...f, formatVersion: 4, models: {} }),
 };
 
 export function parseMap(text: string): MapData {
@@ -186,8 +191,16 @@ export function deserializeMap(raw: unknown): MapData {
     };
   });
 
+  const models: Record<string, ModelSettings> = {};
+  for (const [ref, m] of Object.entries(isObj(f.models) ? f.models : {})) {
+    const bs = isObj(m) ? m.baseScale : undefined;
+    if (typeof bs !== 'number' || !(bs > 0) || !Number.isFinite(bs)) throw new MapFormatError(`models["${ref}"].baseScale musi być liczbą dodatnią.`);
+    models[ref] = { baseScale: bs };
+  }
+
   return {
     schema,
+    models,
     settings: {
       name: typeof s.name === 'string' ? s.name : '',
       size: [size[0], size[1]],

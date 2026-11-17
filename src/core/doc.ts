@@ -1,7 +1,8 @@
 // Dokument edytora: schemat + mapa + zaznaczenie + historia. Każda zmiana przechodzi przez tę klasę,
 // dzięki czemu działa cofnij/ponów i odświeżanie widoków. Bez DOM i Three.js.
 import { History } from './history';
-import { cloneObject, createObject, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Vec3 } from './map';
+import { cloneObject, createObject, modelKey, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Vec3 } from './map';
+import { objectModel } from './objectModel';
 import { getType, parseSchema, type Schema } from './schema';
 import { copyRect, pasteRect, unionRect, type Rect } from './terrain';
 
@@ -11,6 +12,7 @@ type Listener = (payload?: unknown) => void;
 interface ObjectsSnapshot {
   objects: MapObject[];
   groups: MapGroup[];
+  models: MapData['models'];
 }
 
 interface StrokeState {
@@ -26,6 +28,11 @@ export class EditorDoc {
   changes = 0;
   private listeners = new Map<DocEvent, Set<Listener>>();
   private stroke: StrokeState | null = null;
+  /**
+   * Domyślna skala bazowa modelu (z biblioteki) dla modeli, których mapa jeszcze nie zna. Nowe obiekty
+   * z takim modelem dopisują ją do `map.models` w tym samym kroku historii.
+   */
+  modelDefaults: (ref: string) => number | undefined = () => undefined;
 
   /**
    * @param schemaRaw surowy JSON schematu (zmiany z interfejsu, np. przypisanie modelu, robione są na nim,
@@ -99,12 +106,13 @@ export class EditorDoc {
   // ---------- obiekty (zmiany przez migawki, cofane w całości) ----------
 
   private snapshot(): ObjectsSnapshot {
-    return { objects: this.map.objects.map(cloneObject), groups: this.map.groups.map((g) => ({ ...g })) };
+    return { objects: this.map.objects.map(cloneObject), groups: this.map.groups.map((g) => ({ ...g })), models: structuredClone(this.map.models) };
   }
 
   private restore(s: ObjectsSnapshot): void {
     this.map.objects = s.objects.map(cloneObject);
     this.map.groups = s.groups.map((g) => ({ ...g }));
+    this.map.models = structuredClone(s.models);
     const before = this.selection.length;
     this.selection = this.selection.filter((id) => this.getObject(id));
     this.emit('objects');
@@ -116,6 +124,7 @@ export class EditorDoc {
     const before = this.snapshot();
     const selBefore = [...this.selection];
     fn();
+    this.fillModelDefaults(new Set(before.objects.map((o) => o.id)));
     const after = this.snapshot();
     const selAfter = selectAfter ?? this.selection.filter((id) => this.getObject(id));
     this.history.push({
@@ -132,6 +141,29 @@ export class EditorDoc {
     this.emit('objects');
     this.select(selAfter);
     this.touched();
+  }
+
+  /** Nowe obiekty (spoza `known`) z modelem nieznanym mapie dostają skalę bazową z `modelDefaults`. */
+  private fillModelDefaults(known: Set<string>): void {
+    for (const o of this.map.objects) {
+      if (known.has(o.id)) continue;
+      const m = objectModel(this.schema, o);
+      if (!m || modelKey(this.map, m.ref)) continue;
+      const base = this.modelDefaults(m.ref);
+      if (base !== undefined && base !== 1) this.map.models[m.ref] = { baseScale: base };
+    }
+  }
+
+  /**
+   * Skala bazowa modelu (jeden krok historii): zmienia od razu wszystkie kopie modelu na mapie.
+   * Mnożniki obiektów (`scale`) się nie zmieniają.
+   */
+  setModelBaseScale(ref: string, baseScale: number): void {
+    if (!(baseScale > 0) || !Number.isFinite(baseScale)) return;
+    this.transact('model-scale', () => {
+      const key = modelKey(this.map, ref) ?? ref;
+      this.map.models[key] = { baseScale };
+    });
   }
 
   addObject(typeId: string, at: Vec3, points?: Vec3[]): MapObject {

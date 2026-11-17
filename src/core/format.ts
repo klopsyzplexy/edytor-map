@@ -6,8 +6,11 @@ import type { CollisionShape } from './collision';
 import type { WalkableSurface } from './walkable';
 
 export const FORMAT_ID = 'edytor-map';
-/** Historia: 1 – pierwsza wersja (0.1.0); 2 – grupy z podgrupami (`parent`), `derived.collision` (0.2.0). */
-export const FORMAT_VERSION = 2;
+/**
+ * Historia: 1 – pierwsza wersja (0.1.0); 2 – grupy z podgrupami (`parent`), `derived.collision` (0.2.0);
+ * 3 – własny model obiektu (`objects[].model`), dekoracje `@decoration`, `derived.models` (0.3.0).
+ */
+export const FORMAT_VERSION = 3;
 
 /** Dane wyliczane przy eksporcie dla gry; przy wczytywaniu są pomijane (edytor liczy je od nowa). */
 export interface MapDerived {
@@ -16,6 +19,8 @@ export interface MapDerived {
   walkable?: WalkableSurface[];
   /** Kształty kolizji (wielokąty i linie z grubością) w układzie mapy. */
   collision?: CollisionShape[];
+  /** Modele potrzebne mapie (odwołania, np. "modele/beczka.glb"). */
+  models?: string[];
 }
 
 export class MapFormatError extends Error {}
@@ -38,6 +43,7 @@ export interface MapFileJson {
     blocked?: string;
     walkable?: WalkableSurface[];
     collision?: CollisionShape[];
+    models?: string[];
   };
 }
 
@@ -63,14 +69,16 @@ export function serializeMap(map: MapData, derived?: MapDerived, editorVersion?:
         props: { ...o.props },
       };
       if (points.length) out.points = points.map((p) => [...p] as Vec3);
+      if (!o.model) delete out.model;
       return out;
     }),
   };
-  if (derived && (derived.blocked || derived.walkable || derived.collision)) {
+  if (derived && (derived.blocked || derived.walkable || derived.collision || derived.models)) {
     file.derived = {};
     if (derived.blocked) file.derived.blocked = encodeU8(derived.blocked);
     if (derived.walkable) file.derived.walkable = derived.walkable;
     if (derived.collision) file.derived.collision = derived.collision;
+    if (derived.models) file.derived.models = derived.models;
   }
   return file;
 }
@@ -87,6 +95,8 @@ const isVec3 = (v: unknown): v is Vec3 => Array.isArray(v) && v.length === 3 && 
 const MIGRATIONS: Record<number, (f: Obj) => Obj> = {
   // 1 → 2: grupy dostają pole `parent` (podgrupy); nowa, opcjonalna sekcja derived.collision
   1: (f) => ({ ...f, formatVersion: 2, groups: (Array.isArray(f.groups) ? f.groups : []).map((g) => (isObj(g) ? { ...g, parent: null } : g)) }),
+  // 2 → 3: nowe pola są opcjonalne (`objects[].model`, `derived.models`), typ `@decoration` – bez zmian w danych
+  2: (f) => ({ ...f, formatVersion: 3 }),
 };
 
 export function parseMap(text: string): MapData {
@@ -172,6 +182,7 @@ export function deserializeMap(raw: unknown): MapData {
       scale: isVec3(o.scale) ? [...o.scale] : [1, 1, 1],
       points: Array.isArray(o.points) ? o.points.filter(isVec3).map((p) => [...p] as Vec3) : [],
       props,
+      ...(typeof o.model === 'string' && o.model ? { model: o.model } : {}),
     };
   });
 

@@ -30,11 +30,22 @@ export interface PropDef {
   hint?: LocText;
 }
 
+/** Ułożenie modelu względem punktu obiektu: przesunięcie, obrót (stopnie, XYZ) i skala. */
+export interface ModelTransform {
+  offset: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+}
+
+export const IDENTITY_TRANSFORM: ModelTransform = { offset: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] };
+
 export interface ObjectLook {
   shape: Shape;
   color: string;
   /** Adres modelu .glb (URL albo nazwa pliku wczytanego razem ze schematem). */
   model?: string;
+  /** Ułożenie modelu względem punktu obiektu (`modelOffset`, `modelRotation`, `modelScale` w schemacie). */
+  modelTransform: ModelTransform;
 }
 
 export interface ObjectFlags {
@@ -67,6 +78,8 @@ export interface TerrainLayerDef {
   texture?: string;
   textureScale: number;
   water: boolean;
+  /** Czy postać może tędy przejść (np. głęboka woda: false). */
+  passable: boolean;
 }
 
 export interface CameraDef {
@@ -76,6 +89,29 @@ export interface CameraDef {
   yawDeg: number;
   distance: number;
   fovDeg: number;
+  /** Tryb gry: czas (s), w jakim kamera dogania postać; 0 = bez opóźnienia. */
+  followSmoothing: number;
+  /** Tryb gry: granice przybliżania kółkiem myszy (odległość kamery). */
+  minDistance: number;
+  maxDistance: number;
+}
+
+/** Postać gracza w trybie „zagraj tę mapę”. */
+export interface PlayerDef {
+  /** Model postaci (.glb itp.); bez modelu – kapsuła. */
+  model?: string;
+  modelTransform: ModelTransform;
+  /** Nazwy animacji w modelu; bez nich edytor szuka po nazwach (idle/stoi, walk/idzie…). */
+  animations: { idle?: string; walk?: string };
+  /** Promień i wysokość postaci (kolizje). */
+  radius: number;
+  height: number;
+  /** Szybkość ruchu w jednostkach mapy na sekundę. */
+  speed: number;
+  /** Najwyższy stopień, na który postać wchodzi (np. krawężnik). */
+  stepHeight: number;
+  /** Typ obiektu, w którym postać zaczyna (np. "start"). */
+  startType?: string;
 }
 
 export type RuleLevel = 'error' | 'warning';
@@ -101,6 +137,7 @@ export interface Schema {
   /** Nazwa jednostki (np. "m"), tylko do wyświetlania. */
   units: string;
   camera: CameraDef;
+  player: PlayerDef;
   terrainLayers: TerrainLayerDef[];
   objectTypes: ObjectTypeDef[];
   rules: RuleDef[];
@@ -154,7 +191,14 @@ export function parseSchema(raw: unknown): Schema {
     yawDeg: num(cam.yawDeg, 0),
     distance: num(cam.distance, 30),
     fovDeg: num(cam.fovDeg, 50),
+    followSmoothing: 0.15,
+    minDistance: 0,
+    maxDistance: 0,
   };
+  camera.followSmoothing = Math.max(0, num(cam.followSmoothing, 0.15));
+  camera.minDistance = num(cam.minDistance, camera.distance * 0.4);
+  camera.maxDistance = num(cam.maxDistance, camera.distance * 2.5);
+  if (camera.minDistance <= 0 || camera.maxDistance < camera.minDistance) p.push('camera.minDistance i camera.maxDistance: 0 < min ≤ max.');
   if (camera.pitchDeg <= 0 || camera.pitchDeg > 90) p.push('camera.pitchDeg musi być w zakresie (0, 90].');
   if (camera.distance <= 0) p.push('camera.distance musi być większe od 0.');
 
@@ -181,6 +225,7 @@ export function parseSchema(raw: unknown): Schema {
         texture: typeof l.texture === 'string' ? l.texture : undefined,
         textureScale: num(l.textureScale, 4),
         water: l.water === true,
+        passable: l.passable !== false,
       });
     });
   }
@@ -249,7 +294,7 @@ export function parseSchema(raw: unknown): Schema {
         name: isLoc(t.name) ? t.name : tid,
         category: isLoc(t.category) ? t.category : 'Inne',
         kind,
-        look: { shape, color, model: typeof look.model === 'string' ? look.model : undefined },
+        look: { shape, color, model: typeof look.model === 'string' ? look.model : undefined, modelTransform: parseTransform(look, w, p) },
         defaultSize: ds,
         flags: {
           collision: f.collision === true,
@@ -289,6 +334,24 @@ export function parseSchema(raw: unknown): Schema {
     } else p.push(`${where}: nieznany typ zasady "${String(r.type)}" (dostępne: count, minDistance).`);
   });
 
+  // Postać gracza (tryb „zagraj tę mapę”); wszystko opcjonalne
+  const pl = isObj(raw.player) ? raw.player : {};
+  if (raw.player !== undefined && !isObj(raw.player)) p.push('"player" musi być obiektem.');
+  const anim = isObj(pl.animations) ? pl.animations : {};
+  const player: PlayerDef = {
+    model: typeof pl.model === 'string' && pl.model ? pl.model : undefined,
+    modelTransform: parseTransform(pl, 'player', p),
+    animations: { idle: typeof anim.idle === 'string' ? anim.idle : undefined, walk: typeof anim.walk === 'string' ? anim.walk : undefined },
+    radius: num(pl.radius, 0.4),
+    height: num(pl.height, 1.8),
+    speed: num(pl.speed, 5),
+    stepHeight: num(pl.stepHeight, 0.35),
+    startType: typeof pl.startType === 'string' && pl.startType ? pl.startType : undefined,
+  };
+  for (const k of ['radius', 'height', 'speed'] as const) if (!(player[k] > 0)) p.push(`player.${k} musi być większe od 0.`);
+  if (player.stepHeight < 0) p.push('player.stepHeight nie może być ujemne.');
+  if (player.startType && !typeIds.has(player.startType)) p.push(`player.startType wskazuje nieznany typ "${player.startType}".`);
+
   const md = isObj(raw.mapDefaults) ? raw.mapDefaults : {};
   const mapDefaults: MapDefaults = {
     size: Array.isArray(md.size) && md.size.length === 2 && md.size.every((x) => typeof x === 'number' && x > 0) ? (md.size as [number, number]) : [64, 64],
@@ -306,11 +369,30 @@ export function parseSchema(raw: unknown): Schema {
     version: typeof raw.version === 'string' ? raw.version : String(raw.version ?? '1'),
     units: typeof raw.units === 'string' ? raw.units : 'm',
     camera,
+    player,
     terrainLayers,
     objectTypes,
     rules,
     mapDefaults,
   };
+}
+
+const isNum3 = (v: unknown): v is [number, number, number] => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+
+/** `modelOffset`, `modelRotation` (stopnie) i `modelScale` (liczba albo [x, y, z]) z obiektu schematu. */
+function parseTransform(o: Obj, where: string, p: string[]): ModelTransform {
+  const vec = (key: string, d: [number, number, number]): [number, number, number] => {
+    const v = o[key];
+    if (v === undefined) return [...d];
+    if (isNum3(v)) return [...v];
+    p.push(`${where}: ${key} musi być listą trzech liczb.`);
+    return [...d];
+  };
+  let scale: [number, number, number] = [1, 1, 1];
+  if (typeof o.modelScale === 'number' && o.modelScale > 0) scale = [o.modelScale, o.modelScale, o.modelScale];
+  else if (isNum3(o.modelScale) && o.modelScale.every((x) => x > 0)) scale = [...o.modelScale];
+  else if (o.modelScale !== undefined) p.push(`${where}: modelScale musi być liczbą dodatnią albo listą trzech liczb dodatnich.`);
+  return { offset: vec('modelOffset', [0, 0, 0]), rotation: vec('modelRotation', [0, 0, 0]), scale };
 }
 
 function defaultFor(type: PropType, v: unknown, options?: EnumOption[]): PropValue {

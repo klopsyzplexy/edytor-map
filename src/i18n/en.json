@@ -312,5 +312,13 @@
   "props.smooth": "Smooth",
   "props.smoothHint": "Rounds the corners (adds points)",
   "props.simplify": "Simplify",
-  "props.simplifyHint": "Removes redundant points lying almost on a straight line"
+  "props.simplifyHint": "Removes redundant points lying almost on a straight line",
+
+  "builtin.decoration": "Decoration",
+  "builtin.decorationCategory": "Decorations (editor)",
+  "builtin.decorationHint": "Any model from the library, with no game logic. Collision and walkability are set on the object.",
+  "builtin.flagCollision": "Collision",
+  "builtin.flagCollisionHint": "Blocks movement (model outline seen from above)",
+  "builtin.flagWalkable": "Walkable",
+  "builtin.flagWalkableHint": "The character can walk on the model's upward faces"
 }

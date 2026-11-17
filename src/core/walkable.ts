@@ -2,6 +2,7 @@
 // Gra liczy wysokość ruchu jako najwyższą z terenu i powierzchni chodliwych pod postacią.
 import type { MapData, MapObject, Vec3 } from './map';
 import { localToWorld, round } from './math';
+import { modelToWorld, objectFlags, objectModel } from './objectModel';
 import { getType, type Schema } from './schema';
 
 export interface WalkableSurface {
@@ -12,10 +13,10 @@ export interface WalkableSurface {
 }
 
 /**
- * Dostarcza trójkąty powierzchni chodliwej modelu .glb w układzie lokalnym modelu
+ * Dostarcza trójkąty powierzchni chodliwej modelu .glb (odwołanie jak w `look.model`) w układzie pliku modelu
  * (siatka o nazwie zawierającej „walkable”, a gdy jej nie ma – ściany skierowane do góry).
  */
-export type ModelWalkableProvider = (typeId: string) => Float32Array | null;
+export type ModelWalkableProvider = (ref: string) => Float32Array | null;
 
 const CIRCLE_SEGMENTS = 16;
 
@@ -41,19 +42,18 @@ function primitiveTopTriangles(size: Vec3, shape: string): Vec3[] {
 
 export function objectWalkable(schema: Schema, o: MapObject, models?: ModelWalkableProvider): WalkableSurface | null {
   const t = getType(schema, o.type);
-  if (!t || !t.flags.walkable || o.points.length > 0) return null;
-  let local: Vec3[];
-  let scale: Vec3 = o.scale;
-  const fromModel = t.look.model && models ? models(t.id) : null;
-  if (fromModel) {
-    local = [];
-    for (let k = 0; k + 2 < fromModel.length; k += 3) local.push([fromModel[k], fromModel[k + 1], fromModel[k + 2]]);
-  } else {
-    local = primitiveTopTriangles(t.defaultSize, t.look.shape);
-    scale = o.scale;
-  }
+  if (!t || !objectFlags(t, o).walkable || o.points.length > 0) return null;
   const triangles: number[] = [];
-  for (const p of local) for (const v of localToWorld(p, o.position, o.rotation, scale)) triangles.push(round(v));
+  const model = objectModel(schema, o, t);
+  const fromModel = model && models ? models(model.ref) : null;
+  if (model && fromModel) {
+    for (let k = 0; k + 2 < fromModel.length; k += 3)
+      for (const v of modelToWorld([fromModel[k], fromModel[k + 1], fromModel[k + 2]], model.transform, o)) triangles.push(round(v));
+  } else {
+    // bez modelu albo gdy model się jeszcze nie wczytał – górna ściana prostej bryły
+    for (const p of primitiveTopTriangles(t.defaultSize, t.look.shape)) for (const v of localToWorld(p, o.position, o.rotation, o.scale)) triangles.push(round(v));
+  }
+  if (!triangles.length) return null;
   return { objectId: o.id, type: o.type, triangles };
 }
 

@@ -312,5 +312,13 @@
   "props.smooth": "Wygładź",
   "props.smoothHint": "Zaokrągla narożniki (dodaje punkty)",
   "props.simplify": "Uprość",
-  "props.simplifyHint": "Usuwa zbędne punkty leżące prawie na prostej"
+  "props.simplifyHint": "Usuwa zbędne punkty leżące prawie na prostej",
+
+  "builtin.decoration": "Dekoracja",
+  "builtin.decorationCategory": "Dekoracje (edytor)",
+  "builtin.decorationHint": "Dowolny model z biblioteki, bez logiki gry. Kolizję i chodzenie po modelu ustawia się przy obiekcie.",
+  "builtin.flagCollision": "Kolizja",
+  "builtin.flagCollisionHint": "Blokuje ruch (obrys modelu widziany z góry)",
+  "builtin.flagWalkable": "Chodliwy",
+  "builtin.flagWalkableHint": "Postać może chodzić po górnych powierzchniach modelu"
 }

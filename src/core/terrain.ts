@@ -234,6 +234,26 @@ export function computeSlopeMask(map: MapData, maxDeg = map.settings.slope.maxDe
   return out;
 }
 
+/**
+ * Maska warstw nieprzechodnich: 255 tam, gdzie warstwy z listy mają co najmniej połowę wagi w punkcie
+ * (wagi mieszamy proporcjonalnie, więc to warstwa „przeważająca” w danym miejscu).
+ */
+export function computeLayerMask(map: MapData, layerIds: string[], mask: Uint8Array = new Uint8Array(map.terrain.nx * map.terrain.nz)): Uint8Array {
+  const { layers } = map.terrain;
+  const blocked = layerIds.map((id) => layers[id]).filter(Boolean);
+  if (!blocked.length) return mask;
+  const all = Object.values(layers);
+  for (let k = 0; k < mask.length; k++) {
+    let b = 0;
+    for (const a of blocked) b += a[k];
+    if (!b) continue;
+    let sum = 0;
+    for (const a of all) sum += a[k];
+    if (b * 2 >= sum) mask[k] = 255;
+  }
+  return mask;
+}
+
 /** Promień w teren. Zwraca punkt trafienia albo null. */
 export function raycastTerrain(map: MapData, origin: Vec3, dir: Vec3, maxDist = 0): Vec3 | null {
   const [w, d] = map.settings.size;

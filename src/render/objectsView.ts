@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { EditorDoc } from '../core/doc';
 import type { MapObject } from '../core/map';
+import { objectModel } from '../core/objectModel';
 import { getType, type ObjectTypeDef } from '../core/schema';
 import type { ModelLibrary } from './models';
 
@@ -54,7 +55,8 @@ export class ObjectsView {
       seen.add(o.id);
       const t = getType(this.doc.schema, o.type);
       const visible = this.doc.isVisible(o) && !(this.gameView && t && !t.flags.visibleInGame);
-      const sig = JSON.stringify([o.type, o.position, o.rotation, o.scale, o.points, visible, t?.look.model ? this.models.state(t.look.model) : 0]);
+      const m = objectModel(this.doc.schema, o, t);
+      const sig = JSON.stringify([o.type, o.position, o.rotation, o.scale, o.points, visible, m, m ? this.models.state(m.ref) : 0]);
       const cur = this.items.get(o.id);
       if (cur && cur.sig === sig && !force) continue;
       if (cur) this.removeItem(o.id);
@@ -90,9 +92,17 @@ export class ObjectsView {
     g.position.set(...o.position);
     g.rotation.set(o.rotation[0] * D2R, o.rotation[1] * D2R, o.rotation[2] * D2R, 'XYZ');
     g.scale.set(...o.scale);
-    const model = t?.look.model ? this.models.instance(t.look.model) : null;
-    if (model) {
-      g.add(model);
+    const om = objectModel(this.doc.schema, o, t);
+    const model = om ? this.models.instance(om.ref) : null;
+    if (model && om) {
+      // ułożenie modelu względem punktu obiektu (z typu; własny model obiektu stoi bez zmian)
+      const tr = om.transform;
+      const holder = new THREE.Group();
+      holder.position.set(...tr.offset);
+      holder.rotation.set(tr.rotation[0] * D2R, tr.rotation[1] * D2R, tr.rotation[2] * D2R, 'XYZ');
+      holder.scale.set(...tr.scale);
+      holder.add(model);
+      g.add(holder);
       if (ghost)
         model.traverse((c) => {
           const m = c as THREE.Mesh;

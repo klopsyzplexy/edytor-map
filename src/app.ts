@@ -5,8 +5,9 @@ import { EditorDoc } from './core/doc';
 import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/format';
 import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type Schema } from './core/schema';
-import { collectCollision, COLLISION_LINE, rasterizeCollision } from './core/collision';
-import { computeSlopeMask, raycastTerrain } from './core/terrain';
+import { collectCollision, COLLISION_LINE, computeBlockedMask } from './core/collision';
+import { usedModels } from './core/objectModel';
+import { raycastTerrain } from './core/terrain';
 import type { Issue } from './core/validate';
 import { collectWalkable } from './core/walkable';
 import { getLang, LANGS, onLangChange, setLang, t, type Lang } from './i18n';
@@ -689,14 +690,11 @@ export class App implements Ctx {
    */
   private derived(): MapDerived {
     const m = this.doc.map;
-    const walkable = collectWalkable(this.doc.schema, m, (typeId) => {
-      const ty = this.doc.schema.objectTypes.find((x) => x.id === typeId);
-      return ty?.look.model ? this.models.walkableTriangles(ty.look.model) : null;
-    });
-    const collision = collectCollision(this.doc.schema, m);
-    let blocked = m.settings.slope.enabled ? computeSlopeMask(m) : undefined;
-    if (collision.length) blocked = rasterizeCollision(m, collision, blocked);
-    return { ...(blocked ? { blocked } : {}), ...(walkable.length ? { walkable } : {}), ...(collision.length ? { collision } : {}) };
+    const walkable = collectWalkable(this.doc.schema, m, (ref) => this.models.walkableTriangles(ref));
+    const collision = collectCollision(this.doc.schema, m, (ref) => this.models.bounds(ref));
+    const blocked = computeBlockedMask(this.doc.schema, m, collision);
+    const models = usedModels(this.doc.schema, m.objects);
+    return { ...(blocked ? { blocked } : {}), ...(walkable.length ? { walkable } : {}), ...(collision.length ? { collision } : {}), ...(models.length ? { models } : {}) };
   }
 
   async saveMap(saveAs = false): Promise<void> {

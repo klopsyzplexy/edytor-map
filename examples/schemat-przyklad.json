@@ -11,7 +11,22 @@
     "pitchDeg": 55,
     "yawDeg": 0,
     "distance": 40,
-    "fovDeg": 45
+    "fovDeg": 45,
+    "followSmoothing": 0.15,
+    "minDistance": 15,
+    "maxDistance": 90
+  },
+  "player": {
+    "radius": 0.4,
+    "height": 1.8,
+    "speed": 6,
+    "stepHeight": 0.4,
+    "startType": "start",
+    "model": "modele/postac.glb",
+    "animations": {
+      "idle": "stoi",
+      "walk": "idzie"
+    }
   },
   "mapDefaults": {
     "size": [
@@ -64,6 +79,16 @@
       },
       "color": "#2f6f9e",
       "water": true
+    },
+    {
+      "id": "gleboka-woda",
+      "name": {
+        "pl": "Głęboka woda",
+        "en": "Deep water"
+      },
+      "color": "#1d4e7a",
+      "water": true,
+      "passable": false
     }
   ],
   "objectTypes": [

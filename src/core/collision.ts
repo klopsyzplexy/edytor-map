@@ -2,10 +2,15 @@
 // Eksport: kształty wektorowe (`derived.collision`) i maska nieprzechodniości na siatce terenu (`derived.blocked`).
 // Czyste funkcje, bez DOM i Three.js.
 import { cellSize, type MapData, type MapObject, type Vec3 } from './map';
+import { computeLayerMask, computeSlopeMask } from './terrain';
 import { localToWorld, round } from './math';
+import { modelToWorld, objectFlags, objectModel, type Box3 } from './objectModel';
 import { getType, type ObjectTypeDef, type Schema } from './schema';
 
-export { BUILTIN_TYPES, COLLISION_LINE, COLLISION_ZONE } from './builtinTypes';
+/** Pudełko modelu w jego własnym układzie (null – model jeszcze niewczytany). */
+export type ModelBoundsProvider = (ref: string) => Box3 | null;
+
+export { BUILTIN_TYPES, COLLISION_LINE, COLLISION_ZONE, DECORATION } from './builtinTypes';
 
 /** Kształt kolizji w układzie mapy (x, z). */
 export type CollisionShape =
@@ -102,11 +107,24 @@ export function convexHull(pts: Array<[number, number]>): Array<[number, number]
 
 const SEG = 16;
 
-/** Obrys bryły z flagą kolizji widziany z góry (po obrocie i skali). */
-export function solidFootprint(t: ObjectTypeDef, o: MapObject): Array<[number, number]> {
+/**
+ * Obrys bryły z flagą kolizji widziany z góry (po obrocie i skali). Dla modelu – pudełko modelu
+ * (gdy `bounds` je zna), a bez niego pudełko `defaultSize`.
+ */
+export function solidFootprint(t: ObjectTypeDef, o: MapObject, bounds?: ModelBoundsProvider, schema?: Schema): Array<[number, number]> {
+  const model = schema ? objectModel(schema, o, t) : t.look.model ? { ref: t.look.model, transform: t.look.modelTransform } : null;
+  const box = model && bounds ? bounds(model.ref) : null;
+  if (model && box) {
+    const pts: Array<[number, number]> = [];
+    for (const x of [box.min[0], box.max[0]]) for (const y of [box.min[1], box.max[1]]) for (const z of [box.min[2], box.max[2]]) {
+      const w = modelToWorld([x, y, z], model.transform, o);
+      pts.push([round(w[0]), round(w[2])]);
+    }
+    return convexHull(pts);
+  }
   const [w, h, d] = t.defaultSize;
   const local: Vec3[] = [];
-  if (t.look.shape === 'box' || t.look.model) {
+  if (t.look.shape === 'box' || model) {
     for (const y of [0, h]) for (const x of [-w / 2, w / 2]) for (const z of [-d / 2, d / 2]) local.push([x, y, z]);
   } else {
     for (let k = 0; k < SEG; k++) {
@@ -117,19 +135,19 @@ export function solidFootprint(t: ObjectTypeDef, o: MapObject): Array<[number, n
   return convexHull(local.map((p) => localToWorld(p, o.position, o.rotation, o.scale)).map((p) => [round(p[0]), round(p[2])]));
 }
 
-/** Wszystkie kształty kolizji mapy: rysowane w edytorze i bryły/punkty z `flags.collision`. */
-export function collectCollision(schema: Schema, map: MapData): CollisionShape[] {
+/** Wszystkie kształty kolizji mapy: rysowane w edytorze i bryły/punkty z `flags.collision` (także dekoracje z kolizją). */
+export function collectCollision(schema: Schema, map: MapData, bounds?: ModelBoundsProvider): CollisionShape[] {
   const out: CollisionShape[] = [];
   for (const o of map.objects) {
     const t = getType(schema, o.type);
-    if (!t || !t.flags.collision) continue;
+    if (!t || !objectFlags(t, o).collision) continue;
     const xz = o.points.map((p) => [round(p[0]), round(p[2])] as [number, number]);
     if (t.kind === 'zone') {
       if (xz.length >= 3) out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: xz });
     } else if (t.kind === 'path') {
       const width = typeof o.props.width === 'number' && o.props.width > 0 ? o.props.width : 1;
       if (xz.length >= 2) out.push({ objectId: o.id, type: o.type, shape: 'line', points: xz, width });
-    } else out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: solidFootprint(t, o) });
+    } else out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: solidFootprint(t, o, bounds, schema) });
   }
   return out;
 }
@@ -170,4 +188,16 @@ export function rasterizeCollision(map: MapData, shapes: CollisionShape[], mask:
       }
   }
   return mask;
+}
+
+/**
+ * Pełna maska nieprzechodniości (`derived.blocked`): strome zbocza (gdy włączone w mapie), warstwy
+ * nieprzechodnie (`passable: false`) i wszystkie kształty kolizji. Zwraca undefined, gdy nic nie blokuje.
+ */
+export function computeBlockedMask(schema: Schema, map: MapData, shapes: CollisionShape[]): Uint8Array | undefined {
+  const layerIds = schema.terrainLayers.filter((l) => !l.passable).map((l) => l.id);
+  if (!map.settings.slope.enabled && !layerIds.length && !shapes.length) return undefined;
+  let mask = map.settings.slope.enabled ? computeSlopeMask(map) : new Uint8Array(map.terrain.nx * map.terrain.nz);
+  mask = computeLayerMask(map, layerIds, mask);
+  return rasterizeCollision(map, shapes, mask);
 }

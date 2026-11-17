@@ -2,7 +2,9 @@
 // Wewnętrznie każdy model to .glb; inne formaty zamienia import (modelImport.ts).
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { Vec3 } from '../core/map';
 import { fileStem, modelFormat } from '../core/modelFiles';
+import type { Box3 } from '../core/objectModel';
 import { importModelFromUrl } from './modelImport';
 
 export type ModelState = 'loading' | 'ready' | 'error';
@@ -63,6 +65,18 @@ export class ModelLibrary {
       return null;
     }
     return c.scene ? c.scene.clone(true) : null;
+  }
+
+  /** Pudełko modelu w jego własnym układzie (null, dopóki się nie wczyta). */
+  bounds(ref: string): Box3 | null {
+    const scene = this.cache.get(ref)?.scene;
+    if (!scene) {
+      this.instance(ref);
+      return null;
+    }
+    const b = new THREE.Box3().setFromObject(scene, true);
+    if (b.isEmpty()) return null;
+    return { min: b.min.toArray() as Vec3, max: b.max.toArray() as Vec3 };
   }
 
   /**

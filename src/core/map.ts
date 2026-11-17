@@ -34,6 +34,11 @@ export interface MapObject {
   /** Ścieżka i strefa: wierzchołki w układzie mapy (strefa jest zamknięta). */
   points: Vec3[];
   props: Record<string, PropValue>;
+  /**
+   * Własny model obiektu (np. dekoracji), np. "modele/beczka.glb"; zastępuje model typu.
+   * Taki model stoi w punkcie obiektu bez przesunięcia, obrotu i skali z typu.
+   */
+  model?: string;
 }
 
 export interface MapSettings {

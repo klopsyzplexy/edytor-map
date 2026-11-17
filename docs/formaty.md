@@ -30,7 +30,8 @@ Przykład do nauki: [`examples/schemat-przyklad.json`](../examples/schemat-przyk
   "name": { "pl": "Gainer", "en": "Gainer" },
   "version": "1.0",              // wersja schematu nadana przez grę (dowolny napis)
   "units": "m",
-  "camera": { "pitchDeg": 55, "yawDeg": 0, "distance": 40, "fovDeg": 45 },
+  "camera": { "pitchDeg": 55, "yawDeg": 0, "distance": 40, "fovDeg": 45, "followSmoothing": 0.15, "minDistance": 15, "maxDistance": 90 },
+  "player": { "model": "modele/postac.glb", "radius": 0.4, "height": 1.8, "speed": 6, "stepHeight": 0.4, "startType": "start" },
   "mapDefaults": { "size": [64, 64], "resolution": 129, "height": 0, "waterLevel": 0.4, "slopeMaxDeg": 40 },
   "terrainLayers": [ … ],
   "objectTypes": [ … ],
@@ -50,6 +51,32 @@ Przycisk „Widok gry” ustawia kamerę według tych pól:
 | `yawDeg` | obrót wokół osi pionowej; przy 0 kamera stoi po stronie +Z i patrzy w stronę −Z, więc góra ekranu to mniejsze `z` (jak w obrazie 2D) | 0 |
 | `distance` | odległość kamery od punktu, na który patrzy | 30 |
 | `fovDeg` | pionowe pole widzenia | 50 |
+| `followSmoothing` | tryb gry: czas w sekundach, w jakim kamera dogania postać (0 = bez opóźnienia) | 0,15 |
+| `minDistance`, `maxDistance` | tryb gry: granice przybliżania kółkiem myszy (odległość kamery) | `distance` × 0,4 i × 2,5 |
+
+### 2.1a. Postać gracza (`player`) – tryb „zagraj tę mapę”
+
+Cała sekcja i wszystkie pola są opcjonalne. Służą tylko do podglądu w edytorze; gra może je czytać, ale nie musi.
+
+```json
+"player": {
+  "model": "modele/postac.glb",
+  "modelScale": 1, "modelOffset": [0, 0, 0], "modelRotation": [0, 0, 0],
+  "animations": { "idle": "stoi", "walk": "idzie" },
+  "radius": 0.4, "height": 1.8, "speed": 6, "stepHeight": 0.4,
+  "startType": "start"
+}
+```
+
+| Pole | Znaczenie | Domyślnie |
+|---|---|---|
+| `model` | model postaci (jak `look.model`, 2.6); bez modelu edytor pokazuje kapsułę o promieniu `radius` i wysokości `height` | brak |
+| `modelScale`, `modelOffset`, `modelRotation` | ułożenie modelu względem stóp postaci (jak przy typach, 2.6); przód modelu to kierunek +Z | 1, [0,0,0], [0,0,0] |
+| `animations.idle`, `animations.walk` | nazwy animacji „stoi” i „idzie” w modelu. Bez nich edytor szuka animacji po nazwach (`idle`, `stand`, `stoi`… oraz `walk`, `run`, `idzie`…), a gdy jest tylko jedna – używa jej do chodzenia | brak |
+| `radius`, `height` | rozmiar postaci do kolizji (koło o promieniu `radius` na ziemi; `height` decyduje, czy postać mieści się pod mostem) | 0,4 i 1,8 |
+| `speed` | szybkość w jednostkach mapy na sekundę; pod górę bez zmian | 5 |
+| `stepHeight` | najwyższy stopień, na który postać wchodzi (krawężnik, schodek, wejście na most) | 0,35 |
+| `startType` | typ obiektu, w którym postać zaczyna (pierwszy obiekt tego typu w mapie); musi istnieć w `objectTypes` | brak – start na środku mapy |
 
 ### 2.2. Domyślne ustawienia nowej mapy (`mapDefaults`)
 
@@ -70,6 +97,7 @@ Najwyżej 8 warstw. **Pierwsza warstwa jest podłożem:** nowa mapa jest nią w 
 | `color` | kolor `#rrggbb` |
 | `texture` | (opcjonalnie) adres obrazka tekstury; powtarza się co `textureScale` jednostek (domyślnie 4) |
 | `water` | `true` = woda: w podglądzie faluje animowana powierzchnia |
+| `passable` | `false` = postać tędy nie przejdzie (np. głęboka woda); takie miejsca trafiają do maski `derived.blocked` (3.5). Domyślnie `true` |
 
 ### 2.4. Typy obiektów (`objectTypes`)
 
@@ -94,6 +122,7 @@ Najwyżej 8 warstw. **Pierwsza warstwa jest podłożem:** nowa mapa jest nią w 
 | `look.shape` | prosta bryła w edytorze: `box`, `cylinder`, `sphere`, `cone` |
 | `look.color` | kolor w edytorze (dla ścieżek i stref – kolor linii) |
 | `look.model` | (opcjonalnie) model `.glb` – patrz 2.6 |
+| `look.modelScale`, `look.modelOffset`, `look.modelRotation` | (opcjonalnie) ułożenie modelu względem punktu obiektu – patrz 2.6 |
 | `defaultSize` | rozmiar prostej bryły [X, Y, Z]; podstawa bryły leży na ziemi (y = 0 w układzie obiektu) |
 | `flags.collision` | blokuje ruch (informacja dla gry) |
 | `flags.visibleInGame` | `false` = obiekt widoczny tylko w edytorze (np. niewidzialna ściana). W edytorze jest półprzezroczysty, a w „Widoku gry” znika |
@@ -132,6 +161,8 @@ Edytor szuka modelu w tej kolejności:
 
 Przy wczytywaniu z dysku pliki towarzyszące (`.bin`, `.mtl`, tekstury `.png/.jpg/.webp/.tga…`) dobierane są po nazwie, bez względu na katalogi. Można też wskazać archiwum `.zip`. Gdy czegoś brakuje, edytor pokazuje listę brakujących plików i wczytuje model bez nich (brak `.bin` w `.gltf` uniemożliwia wczytanie). Materiały Phong/Lambert z `.fbx` i `.obj` są zamieniane na materiały PBR glTF (kolor, tekstura, przezroczystość; połysk przybliżony szorstkością).
 
+**Ułożenie modelu** (opcjonalne, w `look`): `modelScale` – liczba albo `[x, y, z]`; `modelRotation` – `[x, y, z]` w stopniach (XYZ); `modelOffset` – `[x, y, z]` w jednostkach mapy. Punkt modelu `p` trafia do układu obiektu jako `offset + R(rotation) · (scale · p)`, a potem działa położenie, obrót i skala obiektu. Edytor ustawia te pola w oknie „Model typu” (przypisanie modelu z biblioteki bez edycji pliku; „Plik → Pobierz schemat” zapisuje zmieniony schemat).
+
 Model ma własne wymiary, a obiekt mnoży je przez swoją skalę (`defaultSize` dotyczy tylko prostej bryły). Dopóki model się wczytuje albo gdy wczytać się go nie da, edytor pokazuje zastępczą bryłę z `look.shape` i `defaultSize`. Wczytane pliki modeli trafiają do zapisu roboczego w przeglądarce.
 
 ### 2.7. Zasady walidacji mapy (`rules`)
@@ -169,8 +200,8 @@ Jeden plik JSON. Przykład w skrócie:
 ```jsonc
 {
   "format": "edytor-map",
-  "formatVersion": 2,
-  "editorVersion": "0.2.0",
+  "formatVersion": 3,
+  "editorVersion": "0.3.0",
   "schema": { "id": "przyklad", "version": "1.0" },
   "settings": {
     "name": "Polana",
@@ -198,7 +229,10 @@ Jeden plik JSON. Przykład w skrócie:
       "points": [[1, 0, 1], [10, 0, 1], [10, 0.5, 10]], "props": { "nazwa": "" } },
     { "id": "o4", "type": "@collision-line", "name": "collision-line-1", "group": null, "hidden": false, "locked": false,
       "position": [0, 0, 0], "rotation": [0, 0, 0], "scale": [1, 1, 1],
-      "points": [[30, 0, 2], [40, 0, 2], [40, 0, 12]], "props": { "width": 2.5 } }
+      "points": [[30, 0, 2], [40, 0, 2], [40, 0, 12]], "props": { "width": 2.5 } },
+    { "id": "o6", "type": "@decoration", "name": "decoration-1", "group": null, "hidden": false, "locked": false,
+      "position": [12, 1, 30], "rotation": [0, 90, 0], "scale": [1, 1, 1],
+      "props": { "collision": true, "walkable": false }, "model": "modele/beczka.glb" }
   ],
   "derived": {
     "blocked": "AAAA…",
@@ -206,7 +240,8 @@ Jeden plik JSON. Przykład w skrócie:
     "collision": [
       { "objectId": "o4", "type": "@collision-line", "shape": "line", "points": [[30, 2], [40, 2], [40, 12]], "width": 2.5 },
       { "objectId": "o5", "type": "sciana", "shape": "polygon", "points": [[9, 9.8], [11, 9.8], [11, 10.2], [9, 10.2]] }
-    ]
+    ],
+    "models": ["modele/beczka.glb", "modele/kladka.glb"]
   }
 }
 ```
@@ -219,6 +254,7 @@ Jeden plik JSON. Przykład w skrócie:
 |---|---|---|
 | 1 | 0.1.0 | pierwsza wersja |
 | 2 | 0.2.0 | grupy z podgrupami (`groups[].parent`); wbudowane typy kolizji `@collision-zone` i `@collision-line`; sekcja `derived.collision`; `derived.blocked` obejmuje też wszystkie kolizje (3.5). Migracja 1 → 2: każda grupa dostaje `parent: null`. |
+| 3 | 0.3.0 | własny model obiektu (`objects[].model`); wbudowany typ `@decoration`; sekcja `derived.models`; `derived.blocked` obejmuje też warstwy nieprzechodnie. Migracja 2 → 3: bez zmian w danych (nowe pola są opcjonalne). |
 
 ### 3.2. Teren – dlaczego w tym samym pliku
 
@@ -260,6 +296,8 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
   - `@collision-line` – ściana wzdłuż łamanej w `points` (jak ścieżka), z grubością `props.width` w jednostkach mapy.
 
   Obie są widoczne tylko w edytorze. Gra nie musi czytać tych obiektów: ich kształty są w `derived.collision` (3.7) i w masce `derived.blocked` (3.5).
+- **Dekoracje** (`@decoration`, wbudowany typ edytora, od formatu 3) – dowolny model z biblioteki bez logiki gry. Model jest w polu `model` obiektu, a flagi w `props.collision` (blokuje ruch) i `props.walkable` (można po nim chodzić). Gra może je narysować jak zwykły model; ich kolizje i powierzchnie są już w `derived`.
+- **Własny model obiektu** (`model`, opcjonalnie, od formatu 3) – odwołanie do pliku modelu, np. `"modele/beczka.glb"`, które zastępuje `look.model` typu. Ma je każda dekoracja, a także obiekt typu ze schematu, który powstał z dekoracji przez „Zmień typ”. Taki model stoi w punkcie obiektu bez ułożenia z typu (bez `modelScale`/`modelOffset`/`modelRotation`); działają tylko położenie, obrót i skala obiektu.
 
 ### 3.4. Grupy
 
@@ -270,7 +308,8 @@ Każdy obiekt ma: `id` (unikalny w mapie), `type` (id typu ze schematu), `name`,
 Maska ma tę samą siatkę co teren: `nx · nz` bajtów, base64. `255` oznacza „nie można przejść”, a `0` – „można przejść”. Edytor zapisuje ją, gdy jest w niej cokolwiek do oznaczenia. Punkt siatki ma `255`, jeśli:
 
 - w mapie włączono „Oznacz zbyt strome zbocza” (`settings.slope.enabled`) i zbocze w tym punkcie jest bardziej strome niż `settings.slope.maxDeg`. Nachylenie liczymy z różnic wysokości sąsiednich punktów;
-- punkt leży w którymkolwiek kształcie z `derived.collision` (3.7): w obszarze lassa, w pasie linii kolizji albo w obrysie obiektu z `flags.collision`.
+- punkt leży w którymkolwiek kształcie z `derived.collision` (3.7): w obszarze lassa, w pasie linii kolizji albo w obrysie obiektu z `flags.collision`;
+- (od 0.3) warstwy nieprzechodnie (`passable: false` w schemacie) mają w punkcie co najmniej połowę sumy wag wszystkich warstw.
 
 Wchodzenie pod górę nie zmienia szybkości; gra używa maski tylko jako „przejść / nie przejść”. Dokładność maski to oczko siatki terenu. Gdy gra potrzebuje dokładniejszych kształtów, bierze je z `derived.collision`.
 
@@ -298,7 +337,22 @@ Skąd się biorą kształty:
 
 - `@collision-zone` → `polygon` z punktami lassa;
 - `@collision-line` → `line` z grubością `props.width`;
-- obiekty typów z `flags.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła → `polygon` – obrys widziany z góry (otoczka wypukła bryły po obrocie i skali; dla modelu – pudełko `defaultSize`).
+- obiekty typów z `flags.collision = true` i dekoracje z `props.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła → `polygon` – obrys widziany z góry (otoczka wypukła bryły po obrocie i skali). Dla modelu (od 0.3) to pudełko samego modelu po jego ułożeniu i obrocie obiektu; gdy model nie jest wczytany – pudełko `defaultSize`.
+
+### 3.7a. Modele potrzebne mapie (`derived.models`) i eksport projektu
+
+`derived.models` to lista odwołań do wszystkich modeli, których mapa używa: własnych modeli obiektów i modeli typów obiektów obecnych w mapie, np. `["modele/beczka.glb", "modele/kladka.glb"]`. Odwołania są względne: plik leży w katalogu `modele/` obok mapy.
+
+**Jak przekazać modele grze – wybór:** sama mapa (`.json`) zawiera tylko odwołania, a pliki modeli są obok. „Plik → Eksportuj projekt (.zip)” tworzy archiwum:
+
+```
+mapa.json         – plik mapy (jak zwykły zapis, z derived)
+schemat.json      – schemat (ze zmianami zrobionymi w edytorze, np. przypisane modele)
+biblioteka.json   – foldery biblioteki modeli (tylko dla edytora)
+modele/*.glb      – wszystkie modele z biblioteki edytora
+```
+
+Nie wpisujemy modeli do pliku mapy jako base64 (jak teren), bo modele bywają duże (megabajty tekstur), base64 powiększa je o jedną trzecią, a gra zwykle trzyma modele osobno i używa ich w wielu mapach. Archiwum `.zip` można otworzyć w edytorze („Plik → Otwórz mapę…”): wraca mapa, schemat i cała biblioteka modeli.
 
 ### 3.8. Co edytor robi z `derived` przy wczytywaniu
 

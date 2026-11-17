@@ -329,6 +329,27 @@ export class TerrainMesh {
     });
     this.weightsA.needsUpdate = true;
     this.weightsB.needsUpdate = true;
+    this.updateWaterCells();
+  }
+
+  /** Powierzchnia wody tylko w oczkach, w których jest warstwa wodna (na dużej mapie to duża oszczędność). */
+  private updateWaterCells(): void {
+    const { nx, nz, layers } = this.map.terrain;
+    const wet = this.schema.terrainLayers.filter((l) => l.water).map((l) => layers[l.id]).filter(Boolean);
+    const flag = new Uint8Array(nx * nz);
+    for (const a of wet) for (let k = 0; k < flag.length; k++) if (a[k]) flag[k] = 1;
+    const isWet = (k: number) => flag[k] === 1;
+    const idx: number[] = [];
+    for (let j = 0; j < nz - 1; j++)
+      for (let i = 0; i < nx - 1; i++) {
+        const a = j * nx + i;
+        const b = a + 1;
+        const c = a + nx;
+        const d = c + 1;
+        if (isWet(a) || isWet(b) || isWet(c) || isWet(d)) idx.push(a, c, b, b, c, d);
+      }
+    this.waterGeom.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1));
+    this.water.visible = idx.length > 0;
   }
 
   /** Zmiana poziomu wody: przelicza wysokość powierzchni wody. */

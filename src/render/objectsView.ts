@@ -18,6 +18,15 @@ const unitGeometries: Record<string, THREE.BufferGeometry> = {
 };
 const handleGeom = new THREE.SphereGeometry(1, 12, 8);
 
+/** Materiały prostych brył współdzielone przez obiekty o tym samym kolorze (mniej przełączeń na dużej mapie). */
+const materials = new Map<string, THREE.MeshLambertMaterial>();
+function sharedMaterial(color: THREE.Color, ghost: boolean): THREE.MeshLambertMaterial {
+  const key = `${color.getHexString()}|${ghost}`;
+  let m = materials.get(key);
+  if (!m) materials.set(key, (m = new THREE.MeshLambertMaterial({ color, transparent: ghost, opacity: ghost ? 0.4 : 1, depthWrite: !ghost })));
+  return m;
+}
+
 export interface PickInfo {
   objectId: string;
   vertex?: number;
@@ -125,8 +134,9 @@ export class ObjectsView {
         });
     } else {
       const size = t?.defaultSize ?? [1, 1, 1];
-      const mat = new THREE.MeshLambertMaterial({ color, transparent: ghost, opacity: ghost ? 0.4 : 1, depthWrite: !ghost });
+      const mat = sharedMaterial(color, ghost);
       const mesh = new THREE.Mesh(unitGeometries[t?.look.shape ?? 'box'], mat);
+      mesh.userData.sharedMaterial = true;
       mesh.scale.set(...size);
       g.add(mesh);
       if (ghost || !t) {

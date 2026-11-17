@@ -363,12 +363,17 @@ export class PlayMode {
       } else if (out.length) out.push(out[0].clone());
       return out;
     };
+    // wszystkie kształty jednego koloru w jednej siatce odcinków (tysiące kolizji = kilka wywołań rysowania)
+    const solid = new Map<string, number[]>();
+    const dashed = new Map<string, number[]>();
+    const push = (to: Map<string, number[]>, color: string, line: THREE.Vector3[]) => {
+      if (!to.has(color)) to.set(color, []);
+      const arr = to.get(color)!;
+      for (let k = 0; k + 1 < line.length; k++) arr.push(line[k].x, line[k].y, line[k].z, line[k + 1].x, line[k + 1].y, line[k + 1].z);
+    };
     for (const s of this.shapes) {
       const color = s.type === COLLISION_ZONE ? OVERLAY_COLORS.zone : s.type === COLLISION_LINE ? OVERLAY_COLORS.line : OVERLAY_COLORS.object;
-      const mat = new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(follow(s.points, s.shape === 'polygon')), mat);
-      line.renderOrder = 7;
-      this.overlayGroup.add(line);
+      push(solid, color, follow(s.points, s.shape === 'polygon'));
       if (s.shape === 'line' && s.width > 0.05) {
         // obrys pasa linii kolizji po obu stronach
         for (const side of [-1, 1]) {
@@ -381,13 +386,20 @@ export class PlayMode {
             const l = Math.hypot(dx, dz) || 1;
             off.push([s.points[k][0] - (dz / l) * side * (s.width / 2), s.points[k][1] + (dx / l) * side * (s.width / 2)]);
           }
-          const edge = new THREE.Line(new THREE.BufferGeometry().setFromPoints(follow(off, false)), new THREE.LineDashedMaterial({ color, dashSize: 0.4, gapSize: 0.3, depthTest: false, transparent: true }));
-          edge.computeLineDistances();
-          edge.renderOrder = 7;
-          this.overlayGroup.add(edge);
+          push(dashed, color, follow(off, false));
         }
       }
     }
+    for (const [maps, dash] of [[solid, false], [dashed, true]] as const)
+      for (const [color, pos] of maps) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        const mat = dash ? new THREE.LineDashedMaterial({ color, dashSize: 0.4, gapSize: 0.3, depthTest: false, transparent: true }) : new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true });
+        const seg = new THREE.LineSegments(g, mat);
+        if (dash) seg.computeLineDistances();
+        seg.renderOrder = 7;
+        this.overlayGroup.add(seg);
+      }
     // powierzchnie chodliwe – zielona siatka
     const walk = collectWalkable(this.ctx.doc.schema, map, (ref) => this.ctx.models.walkableTriangles(ref));
     const pos: number[] = [];

@@ -2,6 +2,7 @@
 import type { EditorDoc } from './core/doc';
 import type { MapObject, Vec3 } from './core/map';
 import type { Brush, HeightTool } from './core/terrain';
+import type { Variation } from './core/variation';
 import type { Gizmo } from './render/gizmo';
 import type { ModelLibrary } from './render/models';
 import type { ObjectsView } from './render/objectsView';
@@ -23,6 +24,8 @@ export interface EditorState {
   placeType: string | null;
   /** Ostatni typ wybrany z palety (klawisz O). */
   lastPaletteType: string | null;
+  /** Losowa wariacja skali i obrotu przy stawianiu punktów i brył (np. wielu dekoracji). */
+  variation: Variation;
   /** Lasso kolizji: ile razy wygładzić narysowany kształt (0–3). */
   lassoSmooth: number;
   snap: boolean;

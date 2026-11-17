@@ -1,11 +1,13 @@
 // Panel Biblioteka: wszystkie wczytane modele z miniaturami, wyszukiwaniem i folderami.
 // Model przeciąga się na mapę (dekoracja) albo przypisuje do roli („Użyj jako…”).
 import type { Ctx } from '../context';
+import { modelBaseScale } from '../core/map';
 import { sameModel } from '../core/objectModel';
 import { locText } from '../core/schema';
 import { getLang, t } from '../i18n';
 import type { Thumbnails } from '../render/thumbnails';
 import { clear, h } from './dom';
+import { formatNum } from './units';
 
 /** Typ danych przeciąganego modelu (przeciąganie z biblioteki na widok 3D). */
 export const MODEL_DRAG_TYPE = 'application/x-edytor-model';
@@ -16,6 +18,8 @@ export interface LibraryActions {
   place(name: string): void;
   useAs(name: string): void;
   setFolder(name: string): void;
+  /** Skala bazowa / normalizacja do rozmiaru w metrach. */
+  normalize(name: string): void;
   remove(name: string): void;
 }
 
@@ -94,6 +98,7 @@ function card(ctx: Ctx, thumbs: Thumbnails, name: string, actions: LibraryAction
   const url = thumbs.get(name);
   const failed = ctx.models.state(name) === 'error';
   const roles = modelRoles(ctx, name);
+  const base = modelBaseScale(ctx.doc.map, name) !== 1 ? modelBaseScale(ctx.doc.map, name) : (ctx.models.baseScaleOf(name) ?? 1);
   const menu = h('details', { class: 'menu lib-menu' }, h('summary', { title: t('lib.more') }, '⋯'));
   const item = (label: string, fn: () => void, cls = '') =>
     h('button', {
@@ -110,6 +115,7 @@ function card(ctx: Ctx, thumbs: Thumbnails, name: string, actions: LibraryAction
       { class: 'menu-list' },
       item(t('lib.place'), () => actions.place(name)),
       item(t('lib.useAs'), () => actions.useAs(name)),
+      item(t('lib.normalize'), () => actions.normalize(name)),
       item(t('lib.folder'), () => actions.setFolder(name)),
       h('hr'),
       item(t('lib.remove'), () => actions.remove(name), 'danger'),
@@ -133,7 +139,9 @@ function card(ctx: Ctx, thumbs: Thumbnails, name: string, actions: LibraryAction
     },
     h('div', { class: 'lib-thumb' }, url ? h('img', { src: url, alt: '', draggable: 'false' }) : h('span', { class: 'muted small' }, failed ? t('lib.failed') : '…')),
     h('div', { class: 'lib-name' }, name.replace(/\.glb$/i, '')),
-    roles.length ? h('div', { class: 'lib-roles' }, ...roles.map((r) => h('span', { class: 'tag role' }, r))) : null,
+    roles.length || base !== 1
+      ? h('div', { class: 'lib-roles' }, ...roles.map((r) => h('span', { class: 'tag role' }, r)), base !== 1 ? h('span', { class: 'tag', title: t('lib.baseScaleHint') }, `× ${formatNum(base, 4)}`) : null)
+      : null,
     menu,
   );
 }

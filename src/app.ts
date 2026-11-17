@@ -3,8 +3,9 @@ import exampleSchemaRaw from '../examples/schemat-przyklad.json';
 import type { Ctx, EditorState, ToolId, TransformMode } from './context';
 import { EditorDoc } from './core/doc';
 import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/format';
-import { cloneObject, createMap, heightAt, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
-import { locText, parseSchema, SchemaError, type Schema } from './core/schema';
+import { cloneObject, createMap, heightAt, modelKey, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
+import { locText, parseSchema, SchemaError, type ScaleCategory, type Schema } from './core/schema';
+import { guessCategory } from './core/scaleNormalize';
 import { collectCollision, COLLISION_LINE, computeBlockedMask } from './core/collision';
 import { changeObjectType, modelRef, usedModels } from './core/objectModel';
 import { DECORATION } from './core/builtinTypes';
@@ -17,7 +18,7 @@ import { MODEL_DRAG_TYPE, renderLibrary, type LibraryState } from './ui/library'
 import { raycastTerrain } from './core/terrain';
 import type { Issue } from './core/validate';
 import { collectWalkable } from './core/walkable';
-import { getLang, LANGS, onLangChange, setLang, t, type Lang } from './i18n';
+import { getLang, hasKey, LANGS, onLangChange, setLang, t, type Lang } from './i18n';
 import { MODEL_ACCEPT } from './core/modelFiles';
 import { Gizmo } from './render/gizmo';
 import { Minimap } from './render/minimap';
@@ -26,6 +27,7 @@ import { ModelLibrary } from './render/models';
 import { ObjectsView } from './render/objectsView';
 import { PlayMode } from './render/playMode';
 import { Mannequin } from './render/mannequin';
+import { applyVariation, DEFAULT_VARIATION } from './core/variation';
 import { findStart } from './core/play';
 import { TerrainMesh } from './render/terrainMesh';
 import { Viewport } from './render/viewport';
@@ -33,7 +35,7 @@ import { loadAutosave, writeAutosave } from './storage/autosave';
 import { downloadBlob, hasFileSystemAccess, openBinaryFiles, openJsonFile, openMapFile, saveTextFile, type FsHandle } from './storage/files';
 import { StampLibrary } from './tools/stamps';
 import { LassoTool, PaintTool, PlaceTool, SculptTool, SelectTool, StampTool, type Tool } from './tools/tools';
-import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, promptBox, toast } from './ui/dialogs';
+import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog, normalizeDialog, promptBox, toast, type NormalizeRow } from './ui/dialogs';
 import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
 import { formatMeters } from './ui/units';
@@ -62,6 +64,7 @@ export class App implements Ctx {
     placeType: null,
     lastPaletteType: null,
     lassoSmooth: 1,
+    variation: { ...DEFAULT_VARIATION },
     snap: false,
     gridStep: 1,
     showGrid: false,
@@ -764,6 +767,7 @@ export class App implements Ctx {
     const o = createObject(d.schema, d.map, DECORATION, this.snap(at));
     o.model = modelRef(name);
     o.name = `${fileStem(name)}-${d.map.objects.filter((x) => x.model && fileStem(x.model) === fileStem(name)).length + 1}`;
+    applyVariation(o, this.state.variation);
     d.transact('add', () => d.map.objects.push(o), [o.id]);
   }
 
@@ -825,6 +829,7 @@ export class App implements Ctx {
       if (role === '@player') await this.editPlayerModel(name);
       else await this.editTypeModel(role, name);
     },
+    normalize: (name: string) => void this.normalizeModels([name]),
     setFolder: async (name: string) => {
       const folders = [...new Set(this.models.folders.values())].sort();
       const v = await promptBox(t('lib.folderTitle', { name }), t('lib.folderLabel'), this.models.folders.get(name) ?? '', folders.length ? t('lib.folderExisting', { list: folders.join(', ') }) : t('lib.folderHint'));
@@ -1079,6 +1084,7 @@ export class App implements Ctx {
     if (models.length) this.autosave();
     if (!problems.length) {
       toast(t('toast.modelsLoaded', { n: models.length }));
+      if (models.length) await this.normalizeModels(models.map((m) => m.name));
       return;
     }
     const lines = problems.map((p) => {
@@ -1093,7 +1099,39 @@ export class App implements Ctx {
           return t('models.noModel');
       }
     });
-    void alertBox(t('models.title'), h('div', {}, h('p', {}, t('models.intro', { n: models.length })), h('ul', {}, ...lines.map((l) => h('li', {}, l)))));
+    await alertBox(t('models.title'), h('div', {}, h('p', {}, t('models.intro', { n: models.length })), h('ul', {}, ...lines.map((l) => h('li', {}, l)))));
+    if (models.length) await this.normalizeModels(models.map((m) => m.name));
+  }
+
+  /** Nazwa kategorii modeli: ze schematu albo z tłumaczeń (kategorie domyślne). */
+  private categoryName = (c: ScaleCategory): string => (c.name ? locText(c.name, getLang(), c.id) : hasKey(`scaleCategory.${c.id}`) ? t(`scaleCategory.${c.id}`) : c.id);
+
+  /**
+   * Normalizacja skali: mierzy modele i proponuje skalę bazową według kategorii. Wynik trafia do biblioteki
+   * (domyślna skala nowych obiektów) i do mapy – dla modeli, których mapa już używa (jeden krok cofania).
+   */
+  private async normalizeModels(names: string[]): Promise<void> {
+    const sc = this.doc.schema.scale;
+    const rows: NormalizeRow[] = [];
+    for (const name of names) {
+      const box = await this.models.measure(modelRef(name));
+      const size: Vec3 | null = box ? [box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]] : null;
+      const known = modelKey(this.doc.map, name);
+      const baseScale = known ? this.doc.map.models[known].baseScale : (this.models.baseScaleOf(name) ?? 1);
+      const category = this.models.categories.get(`${fileStem(name)}.glb`) ?? guessCategory(fileStem(name), sc.categories, (c) => [this.categoryName(c)]) ?? '';
+      rows.push({ name, size, category, baseScale });
+    }
+    if (!rows.length) return;
+    const res = await normalizeDialog(rows, sc, this.categoryName);
+    if (!res) return;
+    const used = new Set([...usedModels(this.doc.schema, this.doc.map.objects), this.doc.schema.player.model ?? ''].map((r) => fileStem(r)));
+    const forMap: Array<[string, number]> = [];
+    for (const r of res) {
+      this.models.setBaseScale(r.name, r.baseScale, r.category);
+      if (used.has(fileStem(r.name)) || modelKey(this.doc.map, r.name)) forMap.push([modelKey(this.doc.map, r.name) ?? modelRef(r.name), r.baseScale]);
+    }
+    if (forMap.length) this.doc.setModelBaseScales(forMap);
+    void this.autosave();
   }
 
   /** Wszystkie wczytane modele jako .glb w jednym archiwum – w tym formacie trafiają do gry. */

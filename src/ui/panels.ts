@@ -96,6 +96,7 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
         ),
       ),
       slider(t('lasso.smooth'), st.lassoSmooth, 0, 3, 1, (v) => (st.lassoSmooth = v), 'lassoSmooth', t('lasso.smoothHint')),
+      variationBox(ctx),
     );
     for (const [cat, types] of cats) {
       root.append(
@@ -125,6 +126,31 @@ export function renderPalette(root: HTMLElement, ctx: Ctx): void {
       );
     }
   });
+}
+
+/** Losowa wariacja przy stawianiu: zakres mnożnika skali i losowy obrót. */
+function variationBox(ctx: Ctx): HTMLElement {
+  const v = ctx.state.variation;
+  const num = (key: 'scaleMin' | 'scaleMax') =>
+    h('input', {
+      type: 'number',
+      min: 0.01,
+      step: 0.05,
+      value: v[key],
+      'data-key': `var-${key}`,
+      disabled: !v.enabled,
+      onchange: (e: Event) => {
+        const x = Number((e.target as HTMLInputElement).value);
+        if (x > 0) v[key] = x;
+      },
+    });
+  return h(
+    'div',
+    { class: 'variation', title: t('variation.hint') },
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: v.enabled, 'data-key': 'var-on', onchange: (e: Event) => ((v.enabled = (e.target as HTMLInputElement).checked), ctx.stateChanged()) }), t('variation.title')),
+    h('div', { class: 'vec' }, h('span', { class: 'lbl' }, t('variation.scale')), h('label', {}, t('variation.from'), num('scaleMin')), h('label', {}, t('variation.to'), num('scaleMax'))),
+    h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: v.rotate, disabled: !v.enabled, 'data-key': 'var-rot', onchange: (e: Event) => (v.rotate = (e.target as HTMLInputElement).checked) }), t('variation.rotate')),
+  );
 }
 
 // ---------------- Teren ----------------

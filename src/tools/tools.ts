@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import type { Ctx } from '../context';
 import { cloneObject, heightAt, type MapObject, type Vec3 } from '../core/map';
+import { applyVariation } from '../core/variation';
 import { getType, locText } from '../core/schema';
 import { COLLISION_ZONE, simplify, smoothPoints } from '../core/collision';
 import { applyHeightBrush, applyStamp, paintLayer } from '../core/terrain';
@@ -574,7 +575,7 @@ export class PlaceTool implements Tool {
       this.updatePreview();
       this.ctx.refreshHint();
     } else {
-      this.ctx.doc.addObject(ty.id, p);
+      this.ctx.doc.addObject(ty.id, p, undefined, (o) => applyVariation(o, this.ctx.state.variation));
     }
   }
 

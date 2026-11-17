@@ -152,6 +152,7 @@ export class EditorDoc {
       const m = objectModel(this.schema, o);
       if (m) out.add(fileStem(m.ref));
     }
+    if (this.schema.player.model) out.add(fileStem(this.schema.player.model));
     return out;
   }
 
@@ -160,11 +161,13 @@ export class EditorDoc {
    * skali bazowej mapa nie zna, dostaje skalę z `modelDefaults` (biblioteki) – w tym samym kroku historii.
    */
   private fillModelDefaults(known: Set<string>): void {
-    for (const o of this.map.objects) {
-      const m = objectModel(this.schema, o);
-      if (!m || known.has(fileStem(m.ref)) || modelKey(this.map, m.ref)) continue;
-      const base = this.modelDefaults(m.ref);
-      if (base !== undefined && base !== 1) this.map.models[m.ref] = { baseScale: base };
+    const refs = this.map.objects.map((o) => objectModel(this.schema, o)?.ref);
+    // postać gracza też korzysta ze skali bazowej swojego modelu
+    refs.push(this.schema.player.model);
+    for (const ref of refs) {
+      if (!ref || known.has(fileStem(ref)) || modelKey(this.map, ref)) continue;
+      const base = this.modelDefaults(ref);
+      if (base !== undefined && base !== 1) this.map.models[ref] = { baseScale: base };
     }
   }
 
@@ -173,15 +176,22 @@ export class EditorDoc {
    * Mnożniki obiektów (`scale`) się nie zmieniają.
    */
   setModelBaseScale(ref: string, baseScale: number): void {
-    if (!(baseScale > 0) || !Number.isFinite(baseScale)) return;
+    this.setModelBaseScales([[ref, baseScale]]);
+  }
+
+  /** Skale bazowe kilku modeli naraz (np. po normalizacji importu) – jeden krok historii. */
+  setModelBaseScales(list: Array<[ref: string, baseScale: number]>): void {
+    const ok = list.filter(([, v]) => v > 0 && Number.isFinite(v));
+    if (!ok.length) return;
     this.transact('model-scale', () => {
-      const key = modelKey(this.map, ref) ?? ref;
-      this.map.models[key] = { baseScale };
+      for (const [ref, baseScale] of ok) this.map.models[modelKey(this.map, ref) ?? ref] = { baseScale };
     });
   }
 
-  addObject(typeId: string, at: Vec3, points?: Vec3[]): MapObject {
+  /** Nowy obiekt; `init` może go zmienić przed dodaniem (np. losowa wariacja skali i obrotu). */
+  addObject(typeId: string, at: Vec3, points?: Vec3[], init?: (o: MapObject) => void): MapObject {
     const o = createObject(this.schema, this.map, typeId, at, points);
+    init?.(o);
     this.transact('add', () => this.map.objects.push(o), [o.id]);
     return o;
   }

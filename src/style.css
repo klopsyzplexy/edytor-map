@@ -206,3 +206,14 @@ label.check { display: flex; align-items: center; gap: 6px; margin: 6px 0; curso
 .model-row { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
 .model-row .grow { flex: 1; }
 select.choose { width: 100%; }
+
+/* 0.4: normalizacja skali, wariacja, wymiary */
+table.normalize { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.normalize th, table.normalize td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--border, #3334); vertical-align: middle; }
+table.normalize select { max-width: 240px; }
+table.normalize .inline { display: inline-flex; gap: 4px; align-items: center; margin-left: 6px; }
+input.short { width: 64px; }
+.variation { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border, #3334); display: grid; gap: 4px; }
+.variation .vec input { width: 56px; }
+.size-row { margin: 4px 0 6px; }
+.size-row .lbl { opacity: 0.8; }

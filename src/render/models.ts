@@ -144,6 +144,18 @@ export class ModelLibrary {
     return object ? { object, clips: this.cache.get(ref)?.animations ?? [] } : null;
   }
 
+  /** Wczytuje model (jeśli trzeba) i zwraca jego pudełko; null, gdy wczytać się nie da. */
+  async measure(ref: string): Promise<Box3 | null> {
+    for (let k = 0; k < 600; k++) {
+      this.instance(ref);
+      const st = this.state(ref);
+      if (st === 'error') return null;
+      if (st === 'ready') return this.bounds(ref);
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return null;
+  }
+
   /** Pudełko modelu w jego własnym układzie (null, dopóki się nie wczyta). */
   bounds(ref: string): Box3 | null {
     const scene = this.cache.get(ref)?.scene;

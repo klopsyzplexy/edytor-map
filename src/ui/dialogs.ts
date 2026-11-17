@@ -1,8 +1,11 @@
 // Okna dialogowe: komunikat, potwierdzenie, nowa mapa, pomoc, toasty.
-import type { ModelTransform } from '../core/schema';
+import type { Vec3 } from '../core/map';
+import { proposeBaseScale } from '../core/scaleNormalize';
+import type { ModelTransform, ScaleCategory, ScaleMeasure, WorldScale } from '../core/schema';
 import { t } from '../i18n';
 import { h } from './dom';
 import { cheatSheet } from './shortcuts';
+import { formatNum } from './units';
 
 export function modal(title: string, body: Node, buttons: Array<{ label: string; primary?: boolean; value: string }>, wide = false): Promise<string | null> {
   return new Promise((resolve) => {
@@ -197,4 +200,75 @@ export function toast(msg: string, kind: 'info' | 'error' = 'info'): void {
   toastBox.appendChild(el);
   setTimeout(() => el.classList.add('hide'), kind === 'error' ? 5000 : 2800);
   setTimeout(() => el.remove(), kind === 'error' ? 5500 : 3300);
+}
+
+export interface NormalizeRow {
+  /** Nazwa modelu w bibliotece (np. beczka.glb). */
+  name: string;
+  /** Wymiary pliku modelu w jednostkach mapy (przy skali 1); null – nie udało się zmierzyć. */
+  size: Vec3 | null;
+  /** Kategoria proponowana (zgadnięta z nazwy albo zapisana w bibliotece); '' – bez normalizacji. */
+  category: string;
+  /** Obecna skala bazowa. */
+  baseScale: number;
+}
+
+export interface NormalizeResult {
+  name: string;
+  baseScale: number;
+  category: string;
+}
+
+/**
+ * Normalizacja skali modeli: edytor mierzy model, a użytkownik wybiera kategorię (rozmiar docelowy w metrach
+ * ze schematu albo domyślny) lub wpisuje własny rozmiar. Wynik: skala bazowa każdego modelu.
+ */
+export async function normalizeDialog(rows: NormalizeRow[], scale: WorldScale, catName: (c: ScaleCategory) => string): Promise<NormalizeResult[] | null> {
+  const upm = scale.unitsPerMeter;
+  const CUSTOM = '@custom';
+  const fmt = (v: number) => formatNum(v);
+  const readers: Array<() => NormalizeResult> = [];
+  const table = h('table', { class: 'normalize' }, h('tr', {}, ...['norm.model', 'norm.measured', 'norm.category', 'norm.result'].map((k) => h('th', {}, t(k)))));
+  for (const r of rows) {
+    const opts = [
+      h('option', { value: '' }, t('norm.keep')),
+      ...scale.categories.map((c) => {
+        const range = c.min !== undefined && c.max !== undefined ? `${fmt(c.min)}–${fmt(c.max)}` : fmt(c.size);
+        return h('option', { value: c.id, selected: c.id === r.category }, `${catName(c)} (${range} m, ${t(`norm.measure.${c.measure}`)})`);
+      }),
+      h('option', { value: CUSTOM }, t('norm.custom')),
+    ];
+    const select = h('select', { disabled: !r.size }, ...opts) as HTMLSelectElement;
+    const customM = h('input', { type: 'number', min: 0.01, step: 0.1, value: 1, class: 'short' }) as HTMLInputElement;
+    const measure = h('select', {}, h('option', { value: 'height' }, t('norm.measure.height')), h('option', { value: 'width' }, t('norm.measure.width'))) as HTMLSelectElement;
+    const customBox = h('span', { class: 'inline' }, customM, ' m ', measure);
+    const result = h('span', {});
+    const compute = (): NormalizeResult => {
+      const v = select.value;
+      if (!r.size || v === '') return { name: r.name, baseScale: r.baseScale, category: '' };
+      const cat: ScaleCategory = v === CUSTOM ? { id: CUSTOM, size: Number(customM.value) || 1, measure: measure.value as ScaleMeasure } : scale.categories.find((c) => c.id === v)!;
+      const p = proposeBaseScale(r.size, cat, upm, v === CUSTOM ? Number(customM.value) || 1 : undefined);
+      return { name: r.name, baseScale: p.baseScale, category: v === CUSTOM ? '' : v };
+    };
+    const update = () => {
+      customBox.style.display = select.value === CUSTOM ? '' : 'none';
+      const res = compute();
+      if (!r.size) result.textContent = t('norm.noSize');
+      else {
+        const s = r.size.map((x) => (x * res.baseScale) / upm);
+        result.textContent = t('norm.resultText', { scale: formatNum(res.baseScale, 4), size: `${fmt(s[0])} × ${fmt(s[1])} × ${fmt(s[2])}` });
+      }
+    };
+    for (const el of [select, customM, measure]) el.addEventListener('input', update);
+    update();
+    readers.push(compute);
+    const measured = r.size ? `${fmt(r.size[0] / upm)} × ${fmt(r.size[1] / upm)} × ${fmt(r.size[2] / upm)} m` : '—';
+    table.append(h('tr', {}, h('td', {}, r.name.replace(/\.glb$/i, '')), h('td', { title: t('norm.measuredHint', { scale: formatNum(r.baseScale, 4) }) }, measured), h('td', {}, select, customBox), h('td', {}, result)));
+  }
+  const body = h('div', { class: 'form' }, h('p', { class: 'muted small' }, t('norm.intro', { upm: formatNum(upm, 4) })), table, h('p', { class: 'muted small' }, t('norm.hint')));
+  const v = await modal(t('norm.title'), body, [
+    { label: t('norm.skip'), value: 'no' },
+    { label: t('norm.apply'), primary: true, value: 'ok' },
+  ], true);
+  return v === 'ok' ? readers.map((f) => f()) : null;
 }

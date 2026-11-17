@@ -811,7 +811,10 @@ function typeAndModel(ctx: Ctx, sel: MapObject[], ty: ObjectTypeDef, actions: Ac
       h(
         'div',
         { class: 'model-row' },
-        h('span', { class: 'muted small grow' }, ty.look.model ? t('props.typeModel', { model: fileStem(ty.look.model) }) : t('props.typeNoModel')),
+        (() => {
+          const text = ty.look.model ? t('props.typeModel', { model: fileStem(ty.look.model) }) : t('props.typeNoModel');
+          return h('span', { class: 'muted small grow', title: text }, text);
+        })(),
         h('button', { title: t('props.typeModelHint'), onclick: () => actions.editTypeModel(ty.id) }, t('props.typeModelBtn')),
       ),
     );

@@ -2,6 +2,18 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.4.1] – 2026-11-17
+
+Poprawka interfejsu od testera: menu, panele i okna zawsze mieszczą się w oknie. Zrzuty przed i po: `docs/zrzuty/0.4.1/` (okno 853 × 533 to 1280 × 800 przy skali przeglądarki 150%; 560 px – bardzo wąskie okno).
+
+### Naprawione
+- **Menu** (⋯ w bibliotece, Plik, Mapa – wszystkie menu rozwijane edytora) zawsze mieszczą się w oknie: otwierają się pod przyciskiem albo nad nim, w prawo albo w lewo – tam, gdzie jest miejsce; gdy nie ma miejsca nigdzie, są dosuwane do krawędzi okna, a długa lista przewija się w środku menu. Menu nie są już ucinane przez panel z przewijaniem; przewinięcie panelu zamyka otwarte menu, zmiana rozmiaru okna je przestawia (`src/ui/menus.ts`). Puste pola skrótu w menu „Plik” nie są już pokazywane.
+- **Panele boczne** zwężają się w małym oknie i przy powiększeniu przeglądarki (lewy 180–270 px, prawy 200–310 px, widok 3D co najmniej 120 px); wcześniej poniżej ~580 px prawy panel wychodził poza okno. Przy szerokości okna od ok. 1130 px wygląd bez zmian.
+- **Panel właściwości:** pola i rozwijane listy dopasowują się do szerokości panelu (odwołanie „→” zawsze widoczne), długie teksty są zawijane albo skracane z dymkiem z pełną treścią (rozwijane listy – dymek z wybraną pozycją, wiersz „Model typu”, zakładki lewego panelu).
+- **Lewy panel:** suwaki, pola „Losowej wariacji”, zakładki i typy na liście obiektów nie wychodzą poza panel.
+- **Okna dialogowe** nie są szersze niż okno i przewijają się w środku; w oknie „Zmień rozmiar” pole „Zachowaj proporcje” ma pole wyboru obok tekstu (było nad nim), a pola rozmiaru zwężają się; tabela normalizacji skali mieści się w wąskim oknie.
+- Panel trybu gry nie wychodzi poza mały widok 3D (przewija się).
+
 ## [0.4.0] – 2026-11-17
 
 Skala świata, rozmiar mapy, reguły i przejścia (zadanie `docs/zadania/0.4/01-skala-i-przejscia.md`, raport `docs/raporty/0.4.md`).

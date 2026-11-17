@@ -1209,7 +1209,7 @@ export class App implements Ctx {
     clear(this.el.tabs);
     for (const tab of ['objects', 'terrain', 'list', 'library'] as LeftTab[])
       this.el.tabs.append(
-        h('button', { class: this.leftTab === tab ? 'active' : '', onclick: () => ((this.leftTab = tab), this.renderLeft()) }, t(`tab.${tab}`)),
+        h('button', { class: this.leftTab === tab ? 'active' : '', title: t(`tab.${tab}`), onclick: () => ((this.leftTab = tab), this.renderLeft()) }, t(`tab.${tab}`)),
       );
     if (this.leftTab === 'objects') renderPalette(this.el.left, this);
     else if (this.leftTab === 'terrain') renderTerrainPanel(this.el.left, this);

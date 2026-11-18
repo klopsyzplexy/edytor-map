@@ -272,3 +272,32 @@ describe('ręczna poprawka obrysu', () => {
     expect(outlineStats(o)).toEqual({ parts: 1, vertices: 5 });
   });
 });
+
+describe('tryb gry z obrysami modeli', () => {
+  it('postać wchodzi do środka litery L płotu (dawniej pudełko blokowało), a płot ją zatrzymuje', async () => {
+    const { buildPlayWorld, spawnAt, stepPlayer } = await import('../src/core/play');
+    const s = exampleSchema();
+    const map = createMap(s, { name: 'm', size: [40, 40], resolution: 81, height: 0 });
+    const doc = new EditorDoc(s, map);
+    // płot obrócony o 90°: ramię (4, 0) → (0, −4), ramię (0, 2,5) → (2,5, 0)
+    doc.addObject(DECORATION, [20, 0, 20], undefined, (o) => {
+      o.model = 'modele/plot.glb';
+      o.props.collision = true;
+      o.rotation = [0, 90, 0];
+    });
+    const w = buildPlayWorld(s, map, { collision: collectCollision(s, map, undefined, fromFiles), walkable: [] });
+    const walk = (p: ReturnType<typeof spawnAt>, dir: [number, number], secs: number) => {
+      for (let k = 0; k < secs * 60; k++) stepPlayer(w, p, dir, 1 / 60);
+    };
+    // z zewnątrz do środka L (x > 20, z < 20)
+    const a = spawnAt(w, 24, 14);
+    walk(a, [-1, 1], 0.5);
+    expect(a.pos[0]).toBeLessThan(22.5);
+    expect(a.pos[2]).toBeGreaterThan(16);
+    // przez płot się nie przejdzie: idąc w +z z wnętrza L zatrzyma się przed ramieniem wzdłuż X (z = 20)
+    const b = spawnAt(w, 21.2, 17);
+    walk(b, [0, 1], 2);
+    expect(b.pos[2]).toBeLessThan(20 - 0.4 + 0.01);
+    expect(b.pos[2]).toBeGreaterThan(19);
+  });
+});

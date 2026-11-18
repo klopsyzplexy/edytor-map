@@ -2,6 +2,29 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.5.0] – 2026-11-18
+
+Kolizje z kształtu modelu (zadanie `docs/zadania/0.5/01-kolizje-z-modelu.md`, raport `docs/raporty/0.5.md`, zrzuty przed i po: `docs/zrzuty/0.5.0/`).
+
+### Dodane
+- **Obrys kolizji z kształtu modelu:** edytor raz dla każdego modelu wycina z geometrii pasmo od podstawy do wysokości postaci (`player.height`, z uwzględnieniem skali bazowej), rzutuje je na teren, wypełnia dziury i obrysowuje. Obrys może być wklęsły (płot w kształcie L) i mieć kilka części (dwie skały w jednym modelu); części modelu nad głową postaci (korona drzewa) nie blokują. Obrys przekształca się razem z obiektem: ułożenie z typu, skala bazowa, mnożnik, obrót i położenie (`src/core/modelCollision.ts`).
+- **Okno „Obrys kolizji…”** (menu ⋯ modelu w bibliotece i przycisk w panelu właściwości obiektu z kolizją): podgląd z góry (przekrój na wysokości postaci, reszta modelu, obrys, postać dla porównania, kratka w metrach), **suwak szczegółu** (0 – prosty obrys, odrobinę większy; 1 – dokładny), **poprawka wierzchołków** (przeciąganie, dwuklik na krawędzi – nowy wierzchołek, prawy przycisk albo Delete – usunięcie), **własny narysowany kształt** (kilka wielokątów), „Przywróć obrys z modelu”. Zapis trafia do mapy (cofnij/ponów) i do biblioteki jako domyślny dla innych map.
+- Panel właściwości pokazuje, skąd jest kolizja obiektu z modelem (z kształtu modelu, poprawiona, narysowana).
+- Nakładka kolizji (**C**) w trybie gry wypełnia obrysy obiektów półprzezroczystym kolorem (cienkie obrysy, np. płotu, są widoczne mimo modelu).
+- Przykładowe modele: `skaly.glb` (dwie nieregularne skały, druga obrócona w węźle), `plot.glb` (płot w kształcie L), `drzewo.glb` (cienki pień, szeroka korona) – „Przykładowe modele” w bibliotece.
+- Testy: obrys skał, płotu i drzewa zgodny z geometrią modelu (czytaną z plików .glb), poziom szczegółu, obrót (także zapisany inaczej: 180, 30, 180 = 0, 150, 0), skala bazowa i mnożnik, obrys poprawiony i narysowany z cofaniem, pudełko gdy model niewczytany, format 5 zapis → odczyt bez strat, migracja 4 → 5, chodzenie w trybie gry wewnątrz litery L płotu (razem 123).
+
+### Zmienione
+- **Format mapy 5** (migracja z 4 bez zmian w danych): opcjonalne `models[].collision` (`detail` albo `polygons` + `source`: `edited`/`drawn`, w układzie pliku modelu); w `derived.collision` obrysy obiektów z modelem pochodzą z kształtu modelu – wielokąty mogą być wklęsłe, jeden obiekt może mieć kilka wpisów – i mają pole `source` (`model`, `edited`, `drawn`, `shape`, `bounds`). Szczegóły: `docs/formaty.md` (3.1, 3.3b, 3.7).
+- Kolizja obiektu z modelem to obrys z kształtu zamiast pudełka modelu; pudełko zostaje tylko jako zastępstwo, gdy model się nie wczytał. Proste bryły ze schematu – bez zmian (ich kształt widziany z góry).
+- Przejścia (`behavior: teleport`) z modelem używają obrysu z kształtu modelu (otoczki jego części).
+- Biblioteka (`biblioteka.json` w projekcie i zapis roboczy) pamięta obrys kolizji modelu.
+- Duża mapa testowa `docs/przyklady-map/duza-mapa.zip` w formacie 5 (z nowymi przykładowymi modelami).
+
+### Naprawione
+- **Kolizje obiektów obróconych nie pokrywały się z modelami:** prostokąt był pudełkiem modelu w jego własnym układzie, więc dla modeli, których kształt nie leży wzdłuż osi pliku (np. obrócona część w węźle modelu, ukośny płot), był przekrzywiony względem modelu i dużo większy. Teraz obrys jest liczony z geometrii i obracany dokładnie jak model (testy dla kątów 0–315° i kątów zapisanych inaczej).
+- Postać nie zatrzymuje się już na pustym terenie obok modelu (wnętrze litery L płotu, obszar pod koroną drzewa, puste miejsca wokół skał, które pudełko obejmowało).
+
 ## [0.4.1] – 2026-11-17
 
 Poprawka interfejsu od testera: menu, panele i okna zawsze mieszczą się w oknie. Zrzuty przed i po: `docs/zrzuty/0.4.1/` (okno 853 × 533 to 1280 × 800 przy skali przeglądarki 150%; 560 px – bardzo wąskie okno).

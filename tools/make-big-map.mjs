@@ -161,7 +161,7 @@ for (let n = 0; n < 10; n++) {
 
 const map = {
   format: 'edytor-map',
-  formatVersion: 4,
+  formatVersion: 5,
   editorVersion: pkg.version,
   schema: { id: schema.id, version: schema.version },
   settings: { name: 'Duża mapa (test płynności)', size: [SIZE, SIZE], resolution: [N, N], waterLevel: schema.mapDefaults.waterLevel, slope: { enabled: true, maxDeg: 40 } },

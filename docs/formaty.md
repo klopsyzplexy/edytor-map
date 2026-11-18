@@ -277,8 +277,8 @@ Jeden plik JSON. Przykład w skrócie:
 ```jsonc
 {
   "format": "edytor-map",
-  "formatVersion": 4,
-  "editorVersion": "0.4.0",
+  "formatVersion": 5,
+  "editorVersion": "0.5.0",
   "schema": { "id": "przyklad", "version": "1.0" },
   "settings": {
     "name": "Polana",
@@ -312,14 +312,16 @@ Jeden plik JSON. Przykład w skrócie:
       "props": { "collision": true, "walkable": false }, "model": "modele/beczka.glb" }
   ],
   "models": {
-    "modele/beczka.glb": { "baseScale": 0.5 }
+    "modele/beczka.glb": { "baseScale": 0.5 },
+    "modele/skaly.glb": { "baseScale": 1, "collision": { "detail": 0.8 } }
   },
   "derived": {
     "blocked": "AAAA…",
     "walkable": [ { "objectId": "o3", "type": "most", "triangles": [ … ] } ],
     "collision": [
       { "objectId": "o4", "type": "@collision-line", "shape": "line", "points": [[30, 2], [40, 2], [40, 12]], "width": 2.5 },
-      { "objectId": "o5", "type": "sciana", "shape": "polygon", "points": [[9, 9.8], [11, 9.8], [11, 10.2], [9, 10.2]] }
+      { "objectId": "o5", "type": "sciana", "shape": "polygon", "points": [[9, 9.8], [11, 9.8], [11, 10.2], [9, 10.2]], "source": "shape" },
+      { "objectId": "o6", "type": "@decoration", "shape": "polygon", "points": [[11.8, 29.6], [12.2, 29.6], [12.3, 30], [11.8, 30.4]], "source": "model" }
     ],
     "models": ["modele/beczka.glb", "modele/kladka.glb"]
   }
@@ -336,6 +338,7 @@ Jeden plik JSON. Przykład w skrócie:
 | 2 | 0.2.0 | grupy z podgrupami (`groups[].parent`); wbudowane typy kolizji `@collision-zone` i `@collision-line`; sekcja `derived.collision`; `derived.blocked` obejmuje też wszystkie kolizje (3.5). Migracja 1 → 2: każda grupa dostaje `parent: null`. |
 | 3 | 0.3.0 | własny model obiektu (`objects[].model`); wbudowany typ `@decoration`; sekcja `derived.models`; `derived.blocked` obejmuje też warstwy nieprzechodnie. Migracja 2 → 3: bez zmian w danych (nowe pola są opcjonalne). |
 | 4 | 0.4.0 | sekcja `models` – skala bazowa modeli (3.3a); `objects[].scale` to od teraz mnożnik obiektu (dla modelu: razem ze skalą bazową modelu). Migracja 3 → 4: pusta sekcja `models` (skala bazowa 1), więc stare mapy wyglądają tak samo. |
+| 5 | 0.5.0 | obrys kolizji modelu `models[].collision` (3.3b); w `derived.collision` obrysy obiektów z modelem pochodzą z kształtu modelu (wielokąty mogą być wklęsłe, obiekt może mieć kilka wielokątów) i mają pole `source` (3.7). Migracja 4 → 5: bez zmian w danych (`collision` jest opcjonalne; brak = obrys liczony z kształtu modelu). Gra, która czytała `derived.collision` z formatu 4, działa bez zmian, o ile jej test „punkt w wielokącie” obsługuje wielokąty wklęsłe. |
 
 ### 3.2. Teren – dlaczego w tym samym pliku
 
@@ -397,6 +400,32 @@ Punkt pliku modelu `p` trafia na mapę tak: `położenie + R(obrót obiektu) · 
 
 Zmiana skali bazowej w edytorze (pole „Skala bazowa modelu” w panelu właściwości albo okno normalizacji w bibliotece) zmienia od razu wszystkie kopie i jest jednym krokiem cofania. Biblioteka edytora pamięta skalę bazową modelu (`biblioteka.json`, 3.7a) i nadaje ją mapie, gdy model pojawia się w niej pierwszy raz.
 
+### 3.3b. Obrys kolizji modelu (`models[].collision`) – od formatu 5
+
+Kolizja obiektu z modelem to **obrys z kształtu modelu**, a nie pudełko. Edytor liczy go raz dla każdego modelu:
+
+1. bierze wszystkie trójkąty modelu (w układzie pliku modelu, z przekształceniami węzłów),
+2. wycina z nich pasmo wysokości od najniższego punktu modelu do wysokości postaci (`player.height`, w jednostkach modelu – czyli podzielone przez skalę bazową modelu); części modelu powyżej (np. korona drzewa) nie blokują,
+3. rzutuje pasmo na płaszczyznę terenu, wypełnia dziury (wnętrze skały to też przeszkoda) i obrysowuje wynik,
+4. upraszcza obrys według poziomu szczegółu; prostszy obrys jest odrobinę większy, żeby nie wcinał się w model.
+
+Wynik to jeden albo kilka wielokątów (np. dwie skały w jednym modelu), mogą być wklęsłe (np. płot w kształcie litery L). Obrys przekształca się razem z obiektem tak samo jak punkty modelu (3.3a): ułożenie z typu, skala bazowa, mnożnik, obrót i położenie obiektu.
+
+```json
+"models": {
+  "modele/plot.glb":  { "baseScale": 1, "collision": { "detail": 0.8 } },
+  "modele/skaly.glb": { "baseScale": 1, "collision": { "polygons": [[[-2, -1], [0.5, -1], [0.5, 1], [-2, 1]]], "source": "drawn" } }
+}
+```
+
+| Pole | Znaczenie |
+|---|---|
+| `detail` | poziom szczegółu 0–1 (0 – najprostszy obrys, 1 – najdokładniejszy); brak = 0,5 |
+| `polygons` | obrys poprawiony ręcznie albo narysowany w edytorze: lista wielokątów `[[x, z], …]` w **układzie pliku modelu** (przed skalą bazową); zastępuje obrys wyliczony |
+| `source` | przy `polygons`: `edited` (poprawione wierzchołki obrysu) albo `drawn` (narysowany kształt) |
+
+Gra nie musi liczyć obrysów sama: gotowe obrysy obiektów w układzie mapy są w `derived.collision` (3.7). Biblioteka edytora pamięta ustawienia obrysu modelu (`biblioteka.json`) i nadaje je mapie, gdy model pojawia się w niej pierwszy raz.
+
 ### 3.4. Grupy
 
 `groups` to lista grup: `id`, `name`, `parent` (id grupy nadrzędnej albo `null` – podgrupy tworzą drzewo), `hidden`, `locked`. Obiekt należy do grupy przez swoje pole `group`. Grupy służą tylko do porządkowania w edytorze i nie mają znaczenia dla gry. Ukrycie albo zablokowanie grupy działa na całą jej zawartość, także w podgrupach. Kolejność w `groups` i `objects` to kolejność w drzewie edytora.
@@ -430,12 +459,19 @@ Lista wszystkich kolizji w mapie, w układzie mapy na ziemi `(x, z)`:
 | `shape` | `polygon` – wielokąt (zamknięty: ostatni punkt łączy się z pierwszym); `line` – łamana |
 | `points` | wierzchołki `[x, z]` |
 | `width` | tylko dla `line`: grubość ściany; nieprzechodnie jest wszystko w odległości ≤ `width / 2` od łamanej |
+| `source` | (od formatu 5) tylko dla obrysów punktów i brył: `model` – obrys z kształtu modelu, `edited` / `drawn` – obrys modelu poprawiony / narysowany w edytorze, `shape` – kształt prostej bryły, `bounds` – pudełko modelu (model nie był wczytany przy zapisie) |
+
+Wielokąty mogą być **wklęsłe**; jeden obiekt może mieć **kilka** wielokątów (każdy to osobny wpis z tym samym `objectId`). Punkt jest zablokowany, gdy leży w którymkolwiek z nich.
 
 Skąd się biorą kształty:
 
 - `@collision-zone` → `polygon` z punktami lassa;
 - `@collision-line` → `line` z grubością `props.width`;
-- obiekty typów z `flags.collision = true` i dekoracje z `props.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła → `polygon` – obrys widziany z góry (otoczka wypukła bryły po obrocie i skali). Dla modelu (od 0.3) to pudełko samego modelu po jego ułożeniu i obrocie obiektu; gdy model nie jest wczytany – pudełko `defaultSize`.
+- obiekty typów z `flags.collision = true` i dekoracje z `props.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła:
+  - z modelem (od formatu 5) → obrys z kształtu modelu (3.3b) po ułożeniu, skali i obrocie obiektu – jeden `polygon` na każdą część; model bez geometrii na wysokości postaci (np. sama korona) nie ma kolizji; gdy model nie był wczytany – pudełko modelu (`source: "bounds"`, a bez niego pudełko `defaultSize`);
+  - prosta bryła → jej kształt widziany z góry po obrocie i skali (prostopadłościan – prostokąt, walec, kula, stożek – elipsa z 16 boków).
+
+Obrót obrysu jest taki sam jak obrót modelu w scenie (kąty Eulera XYZ, jak `THREE.Euler('XYZ')`): punkt `(x, z)` obrócony o kąt `a` wokół osi Y trafia do `(x·cos a + z·sin a, −x·sin a + z·cos a)`.
 
 ### 3.7a. Modele potrzebne mapie (`derived.models`) i eksport projektu
 
@@ -446,7 +482,7 @@ Skąd się biorą kształty:
 ```
 mapa.json         – plik mapy (jak zwykły zapis, z derived)
 schemat.json      – schemat (ze zmianami zrobionymi w edytorze, np. przypisane modele)
-biblioteka.json   – foldery, skale bazowe i kategorie modeli w bibliotece (tylko dla edytora)
+biblioteka.json   – foldery, skale bazowe, kategorie i obrysy kolizji modeli w bibliotece (tylko dla edytora)
 modele/*.glb      – wszystkie modele z biblioteki edytora
 ```
 

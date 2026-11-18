@@ -6,6 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { Vec3 } from '../core/map';
 import { fileStem, modelFormat } from '../core/modelFiles';
 import type { Box3 } from '../core/objectModel';
+import { cloneModelCollision, collisionBand, computeOutline, parseModelCollision, type ModelCollision, type Outline } from '../core/modelCollision';
 import { importModelFromUrl } from './modelImport';
 
 export type ModelState = 'loading' | 'ready' | 'error';
@@ -23,6 +24,11 @@ export class ModelLibrary {
   readonly baseScales = new Map<string, number>();
   /** Kategoria modelu użyta przy normalizacji (klucz: nazwa.glb). */
   readonly categories = new Map<string, string>();
+  /** Domyślny obrys kolizji modelu w bibliotece (klucz: nazwa.glb) – dla map, które modelu jeszcze nie znają. */
+  readonly collisions = new Map<string, ModelCollision>();
+  /** Wyliczone obrysy kolizji (klucz: odwołanie|szczegół|pasmo) i trójkąty modeli. */
+  private outlines = new Map<string, Outline>();
+  private tris = new Map<string, Float32Array>();
   /** Licznik zmian pliku modelu (miniatury odświeżają się po podmianie). */
   readonly versions = new Map<string, number>();
   onChange: () => void = () => {};
@@ -37,6 +43,7 @@ export class ModelLibrary {
     this.versions.set(`${key}.glb`, (this.versions.get(`${key}.glb`) ?? 0) + 1);
     // przeładuj modele, które wskazują na ten plik
     for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
+    this.forgetGeometry(key);
     this.onChange();
   }
 
@@ -50,7 +57,9 @@ export class ModelLibrary {
     this.folders.delete(`${key}.glb`);
     this.baseScales.delete(`${key}.glb`);
     this.categories.delete(`${key}.glb`);
+    this.collisions.delete(`${key}.glb`);
     for (const k of [...this.cache.keys()]) if (fileStem(k) === key) this.cache.delete(k);
+    this.forgetGeometry(key);
     this.onChange();
   }
 
@@ -75,14 +84,81 @@ export class ModelLibrary {
     return this.baseScales.get(`${fileStem(name)}.glb`);
   }
 
+  /** Domyślny obrys kolizji modelu w bibliotece (undefined – wyliczany z kształtu z domyślnym szczegółem). */
+  setCollision(name: string, c: ModelCollision | undefined): void {
+    const key = `${fileStem(name)}.glb`;
+    if (c && (c.detail !== undefined || c.polygons?.length)) this.collisions.set(key, cloneModelCollision(c));
+    else this.collisions.delete(key);
+    this.onChange();
+  }
+
+  collisionOf(name: string): ModelCollision | undefined {
+    const c = this.collisions.get(`${fileStem(name)}.glb`);
+    return c ? cloneModelCollision(c) : undefined;
+  }
+
+  /** Dostawca obrysów dla core/collision (collectCollision, buildTriggers). */
+  readonly outlineProvider = (ref: string, detail: number, band: number): Outline | null => this.collisionOutline(ref, detail, band);
+
+  private forgetGeometry(stem: string): void {
+    for (const k of [...this.tris.keys()]) if (fileStem(k) === stem) this.tris.delete(k);
+    for (const k of [...this.outlines.keys()]) if (fileStem(k.split('|')[0]) === stem) this.outlines.delete(k);
+  }
+
+  /** Wszystkie trójkąty modelu w jego własnym układzie (x, y, z × 3) albo null, dopóki się nie wczyta. */
+  triangles(ref: string): Float32Array | null {
+    const hit = this.tris.get(ref);
+    if (hit) return hit;
+    const scene = this.cache.get(ref)?.scene;
+    if (!scene) {
+      this.instance(ref);
+      return null;
+    }
+    scene.updateMatrixWorld(true);
+    const out: number[] = [];
+    const v = new THREE.Vector3();
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (!m.isMesh) return;
+      const pos = m.geometry.getAttribute('position');
+      const index = m.geometry.getIndex();
+      const count = index ? index.count : pos.count;
+      for (let k = 0; k + 2 < count; k += 3)
+        for (let c = 0; c < 3; c++) {
+          v.fromBufferAttribute(pos, index ? index.getX(k + c) : k + c).applyMatrix4(m.matrixWorld);
+          out.push(v.x, v.y, v.z);
+        }
+    });
+    const tris = new Float32Array(out);
+    this.tris.set(ref, tris);
+    return tris;
+  }
+
+  /**
+   * Obrys kolizji z kształtu modelu (układ modelu): przekrój w paśmie `band` nad podstawą modelu,
+   * z poziomem szczegółu `detail`. Liczony raz i pamiętany. Null, dopóki model się nie wczyta.
+   */
+  collisionOutline(ref: string, detail: number, band: number): Outline | null {
+    const key = `${ref}|${detail.toFixed(3)}|${band.toFixed(4)}`;
+    const hit = this.outlines.get(key);
+    if (hit) return hit;
+    const tris = this.triangles(ref);
+    if (!tris) return null;
+    const b = collisionBand(tris, band);
+    const o = b ? computeOutline(tris, b[0], b[1], detail) : [];
+    this.outlines.set(key, o);
+    return o;
+  }
+
   /** Foldery, skale bazowe i kategorie biblioteki do zapisu (plik biblioteka.json w projekcie i zapis roboczy). */
-  libraryJson(): { models: Array<{ file: string; folder?: string; baseScale?: number; category?: string }> } {
+  libraryJson(): { models: Array<{ file: string; folder?: string; baseScale?: number; category?: string; collision?: ModelCollision }> } {
     return {
       models: this.fileNames.map((f) => ({
         file: f,
         ...(this.folders.get(f) ? { folder: this.folders.get(f) } : {}),
         ...(this.baseScales.has(f) ? { baseScale: this.baseScales.get(f) } : {}),
         ...(this.categories.has(f) ? { category: this.categories.get(f) } : {}),
+        ...(this.collisions.has(f) ? { collision: this.collisions.get(f) } : {}),
       })),
     };
   }
@@ -91,12 +167,14 @@ export class ModelLibrary {
     const list = typeof j === 'object' && j && Array.isArray((j as { models?: unknown }).models) ? (j as { models: unknown[] }).models : [];
     for (const m of list) {
       if (typeof m !== 'object' || !m) continue;
-      const { file, folder, baseScale, category } = m as { file?: unknown; folder?: unknown; baseScale?: unknown; category?: unknown };
+      const { file, folder, baseScale, category, collision } = m as { file?: unknown; folder?: unknown; baseScale?: unknown; category?: unknown; collision?: unknown };
       if (typeof file !== 'string') continue;
       const key = `${fileStem(file)}.glb`;
       if (typeof folder === 'string' && folder) this.folders.set(key, folder);
       if (typeof baseScale === 'number' && baseScale > 0 && baseScale !== 1) this.baseScales.set(key, baseScale);
       if (typeof category === 'string' && category) this.categories.set(key, category);
+      const c = parseModelCollision(collision);
+      if (c) this.collisions.set(key, c);
     }
     this.onChange();
   }

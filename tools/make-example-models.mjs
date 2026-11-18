@@ -1,7 +1,10 @@
 // Tworzy przykładowe modele do biblioteki i trybu gry:
 //  - examples/modele/postac.glb – prosta postać (1,8 m, przodem do +Z) z animacjami „stoi” i „idzie”,
 //  - examples/modele/beczka.glb – beczka (dekoracja z kolizją),
-//  - examples/modele/skrzynia.glb – skrzynia z górną ścianą „walkable_top” (można na niej stanąć).
+//  - examples/modele/skrzynia.glb – skrzynia z górną ścianą „walkable_top” (można na niej stanąć),
+//  - examples/modele/skaly.glb – dwie nieregularne skały (dwie części, druga obrócona w węźle),
+//  - examples/modele/plot.glb – płot w kształcie litery L (słupki i żerdzie, obrys wklęsły),
+//  - examples/modele/drzewo.glb – drzewo: cienki pień, szeroka korona nad głową postaci.
 // Uruchomienie: node tools/make-example-models.mjs
 import { writeFileSync } from 'node:fs';
 
@@ -198,5 +201,71 @@ writeGlb('skrzynia.glb', {
     { name: 'walkable_top', color: plank, geo: box(0, 0.71, 0, 1.2, 0.02, 1.2) },
   ],
   nodes: [{ name: 'skrzynia', mesh: 0 }, { name: 'walkable_top', mesh: 1 }],
+  roots: [0, 1],
+});
+
+// ---------- skały (dwie części) ----------
+/** Nieregularna bryła: kula `seg` × `rings` z promieniem zmienianym falami, spłaszczona, podstawa na y = 0. */
+function rock(rx, ry, rz, seed, seg = 18, rings = 10) {
+  const pos = [], nor = [], idx = [];
+  for (let k = 0; k <= rings; k++) {
+    const b = (k / rings) * Math.PI; // 0 = góra, π = dół
+    for (let s = 0; s <= seg; s++) {
+      const a = (s / seg) * Math.PI * 2;
+      const wobble = 1 + 0.16 * Math.sin(3 * a + seed) * Math.sin(b) + 0.1 * Math.cos(5 * a + seed * 2) * Math.sin(b);
+      const x = Math.cos(a) * Math.sin(b) * rx * wobble;
+      const z = Math.sin(a) * Math.sin(b) * rz * wobble;
+      const y = Math.max(0, (Math.cos(b) * 0.5 + 0.5) * ry * 1.15 - ry * 0.15);
+      pos.push(x, y, z);
+      const l = Math.hypot(x, y - ry / 2, z) || 1;
+      nor.push(x / l, (y - ry / 2) / l, z / l);
+    }
+  }
+  for (let k = 0; k < rings; k++) for (let s = 0; s < seg; s++) {
+    const a = k * (seg + 1) + s, b = a + seg + 1;
+    idx.push(a, a + 1, b, a + 1, b + 1, b);
+  }
+  return { pos, nor, idx };
+}
+const stone = [0.52, 0.5, 0.47, 1];
+/** Kwaternion obrotu wokół osi Y o kąt w stopniach. */
+const qy = (deg) => [0, Math.sin((deg * Math.PI) / 360), 0, Math.cos((deg * Math.PI) / 360)];
+writeGlb('skaly.glb', {
+  parts: [
+    { name: 'skala_duza', color: stone, geo: rock(1.3, 1.5, 0.9, 0.7) },
+    { name: 'skala_mala', color: stone, geo: rock(0.75, 0.9, 0.45, 2.1) },
+  ],
+  nodes: [
+    { name: 'skaly', children: [1, 2] },
+    { name: 'skala_duza', mesh: 0, translation: [-0.9, 0, 0] },
+    { name: 'skala_mala', mesh: 1, translation: [1.5, 0, 0.6], rotation: qy(35) },
+  ],
+  roots: [0],
+});
+
+// ---------- płot w kształcie L ----------
+const fenceWood = [0.6, 0.45, 0.28, 1];
+const fence = [];
+// odcinek wzdłuż X: od (0, 0) do (4, 0); odcinek wzdłuż Z: od (0, 0) do (0, 2,5)
+for (let x = 0; x <= 4; x += 1) fence.push(box(x, 0.55, 0, 0.12, 1.1, 0.12));
+for (let z = 1; z <= 2.5; z += 0.75) fence.push(box(0, 0.55, z, 0.12, 1.1, 0.12));
+for (const y of [0.4, 0.85]) fence.push(box(2, y, 0, 4.1, 0.1, 0.05), box(0, y, 1.25, 0.05, 0.1, 2.6));
+writeGlb('plot.glb', {
+  parts: [{ name: 'plot', color: fenceWood, geo: merge(...fence) }],
+  nodes: [{ name: 'plot', mesh: 0 }],
+  roots: [0],
+});
+
+// ---------- drzewo: pień przeszkadza, korona jest nad głową ----------
+const bark = [0.42, 0.3, 0.2, 1], leaves = [0.25, 0.55, 0.25, 1];
+const trunk = barrel(0.22, 2.6, 12, 2);
+const crown = rock(1.6, 1.8, 1.6, 1.3);
+crown.pos = crown.pos.map((v, i) => (i % 3 === 1 ? v + 2.2 : v));
+writeGlb('drzewo.glb', {
+  parts: [
+    { name: 'pien', color: bark, geo: trunk },
+    { name: 'korona', color: leaves, geo: crown },
+  ],
+  nodes: [{ name: 'pien', mesh: 0 }, { name: 'korona', mesh: 1 }],
   roots: [0, 1],
 });

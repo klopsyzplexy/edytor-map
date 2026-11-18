@@ -2,6 +2,7 @@
 // dzięki czemu działa cofnij/ponów i odświeżanie widoków. Bez DOM i Three.js.
 import { History } from './history';
 import { cloneObject, createObject, modelKey, newId, syncLayersWithSchema, type MapData, type MapGroup, type MapObject, type MapSettings, type Terrain, type Vec3 } from './map';
+import { cloneModelCollision, type ModelCollision } from './modelCollision';
 import { fileStem } from './modelFiles';
 import { objectModel } from './objectModel';
 import type { ResizeResult } from './resize';
@@ -31,10 +32,10 @@ export class EditorDoc {
   private listeners = new Map<DocEvent, Set<Listener>>();
   private stroke: StrokeState | null = null;
   /**
-   * Domyślna skala bazowa modelu (z biblioteki) dla modeli, których mapa jeszcze nie zna. Nowe obiekty
-   * z takim modelem dopisują ją do `map.models` w tym samym kroku historii.
+   * Domyślne ustawienia modelu z biblioteki (skala bazowa, obrys kolizji) dla modeli, których mapa jeszcze
+   * nie zna. Nowe obiekty z takim modelem dopisują je do `map.models` w tym samym kroku historii.
    */
-  modelDefaults: (ref: string) => number | undefined = () => undefined;
+  modelDefaults: (ref: string) => { baseScale?: number; collision?: ModelCollision } | undefined = () => undefined;
 
   /**
    * @param schemaRaw surowy JSON schematu (zmiany z interfejsu, np. przypisanie modelu, robione są na nim,
@@ -167,8 +168,9 @@ export class EditorDoc {
     refs.push(this.schema.player.model);
     for (const ref of refs) {
       if (!ref || known.has(fileStem(ref)) || modelKey(this.map, ref)) continue;
-      const base = this.modelDefaults(ref);
-      if (base !== undefined && base !== 1) this.map.models[ref] = { baseScale: base };
+      const def = this.modelDefaults(ref);
+      const base = def?.baseScale ?? 1;
+      if (base !== 1 || def?.collision) this.map.models[ref] = { baseScale: base, ...(def?.collision ? { collision: cloneModelCollision(def.collision) } : {}) };
     }
   }
 
@@ -185,7 +187,25 @@ export class EditorDoc {
     const ok = list.filter(([, v]) => v > 0 && Number.isFinite(v));
     if (!ok.length) return;
     this.transact('model-scale', () => {
-      for (const [ref, baseScale] of ok) this.map.models[modelKey(this.map, ref) ?? ref] = { baseScale };
+      for (const [ref, baseScale] of ok) {
+        const k = modelKey(this.map, ref) ?? ref;
+        this.map.models[k] = { ...this.map.models[k], baseScale };
+      }
+    });
+  }
+
+  /**
+   * Obrys kolizji modelu w mapie (jeden krok historii): poziom szczegółu albo obrys poprawiony ręcznie
+   * lub narysowany; undefined – obrys wyliczany z kształtu modelu z domyślnym szczegółem.
+   */
+  setModelCollision(ref: string, c: ModelCollision | undefined): void {
+    this.transact('model-collision', () => {
+      const k = modelKey(this.map, ref) ?? ref;
+      const cur = this.map.models[k] ?? { baseScale: this.modelDefaults(ref)?.baseScale ?? 1 };
+      const next = { ...cur };
+      if (c && (c.detail !== undefined || c.polygons?.length)) next.collision = cloneModelCollision(c);
+      else delete next.collision;
+      this.map.models[k] = next;
     });
   }
 

@@ -202,7 +202,7 @@ describe('format mapy 4: skala bazowa modelu i mnożnik obiektu', () => {
 
   it('nowy obiekt z modelem nieznanym mapie dostaje skalę z biblioteki (w tym samym kroku cofania)', () => {
     const { map, doc } = setup();
-    doc.modelDefaults = (ref) => (ref.includes('kladka') ? 0.25 : undefined);
+    doc.modelDefaults = (ref) => (ref.includes('kladka') ? { baseScale: 0.25 } : undefined);
     doc.addObject('kladka', [8, 0, 8]);
     expect(map.models).toEqual({ 'modele/kladka.glb': { baseScale: 0.25 } });
     doc.undo();

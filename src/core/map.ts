@@ -5,6 +5,7 @@
 // Teren to siatka nx × nz wierzchołków; wierzchołek (i, j) leży w (i·width/(nx−1), j·depth/(nz−1)),
 // a jego indeks w tablicach to j·nx + i.
 
+import type { ModelCollision } from './modelCollision';
 import { fileStem } from './modelFiles';
 import { defaultProps, getType, type PropValue, type Schema } from './schema';
 
@@ -62,6 +63,8 @@ export interface Terrain {
 export interface ModelSettings {
   /** Skala bazowa modelu (normalizacja do rozmiaru w metrach); działa na wszystkie kopie modelu. */
   baseScale: number;
+  /** Obrys kolizji modelu (od formatu 5): poziom szczegółu albo obrys poprawiony ręcznie / narysowany. */
+  collision?: ModelCollision;
 }
 
 export interface MapData {

@@ -1,20 +1,31 @@
 // Kolizje dla gry: rysowane w edytorze (lasso – wielokąt, linia – łamana z grubością) i obiekty z flagą kolizji.
 // Eksport: kształty wektorowe (`derived.collision`) i maska nieprzechodniości na siatce terenu (`derived.blocked`).
 // Czyste funkcje, bez DOM i Three.js.
-import { cellSize, type MapData, type MapObject, type Vec3 } from './map';
+import { cellSize, modelBaseScale, modelKey, type MapData, type MapObject, type Vec3 } from './map';
 import { computeLayerMask, computeSlopeMask } from './terrain';
 import { localToWorld, round } from './math';
 import { modelToWorld, objectFlags, objectModel, type Box3 } from './objectModel';
+import { DEFAULT_DETAIL, outlineToWorld, type Outline, type Pt } from './modelCollision';
 import { getType, type ObjectTypeDef, type Schema } from './schema';
 
 /** Pudełko modelu w jego własnym układzie (null – model jeszcze niewczytany). */
 export type ModelBoundsProvider = (ref: string) => Box3 | null;
 
+/**
+ * Obrys kolizji wyliczony z geometrii modelu (układ pliku modelu): `detail` – poziom szczegółu 0–1,
+ * `band` – wysokość pasma przekroju nad podstawą modelu w jednostkach modelu. Null – model niewczytany;
+ * pusta lista – w paśmie nie ma geometrii.
+ */
+export type ModelOutlineProvider = (ref: string, detail: number, band: number) => Outline | null;
+
+/** Skąd jest kształt kolizji obiektu (pole `source` w `derived.collision`). */
+export type CollisionSource = 'model' | 'edited' | 'drawn' | 'shape' | 'bounds';
+
 export { BUILTIN_TYPES, COLLISION_LINE, COLLISION_ZONE, DECORATION } from './builtinTypes';
 
 /** Kształt kolizji w układzie mapy (x, z). */
 export type CollisionShape =
-  | { objectId: string; type: string; shape: 'polygon'; points: Array<[number, number]> }
+  | { objectId: string; type: string; shape: 'polygon'; points: Array<[number, number]>; source?: CollisionSource }
   | { objectId: string; type: string; shape: 'line'; points: Array<[number, number]>; width: number };
 
 // ---------- geometria płaska ----------
@@ -135,8 +146,47 @@ export function solidFootprint(t: ObjectTypeDef, o: MapObject, bounds?: ModelBou
   return convexHull(local.map((p) => localToWorld(p, o.position, o.rotation, o.scale)).map((p) => [round(p[0]), round(p[2])]));
 }
 
+/**
+ * Obrys kolizji modelu w mapie (układ modelu): poprawiony ręcznie lub narysowany (`models[ref].collision.polygons`)
+ * albo wyliczony z geometrii z poziomem szczegółu z mapy, w paśmie do wysokości postaci (z uwzględnieniem skali bazowej).
+ */
+export function modelOutline(
+  map: Pick<MapData, 'models'>,
+  ref: string,
+  playerHeight: number,
+  outline?: ModelOutlineProvider,
+): { outline: Outline; source: CollisionSource } | null {
+  const k = modelKey(map, ref);
+  const c = k ? map.models[k].collision : undefined;
+  if (c?.polygons?.length) return { outline: c.polygons, source: c.source ?? 'edited' };
+  const auto = outline?.(ref, c?.detail ?? DEFAULT_DETAIL, playerHeight / modelBaseScale(map, ref));
+  return auto ? { outline: auto, source: 'model' } : null;
+}
+
+/**
+ * Obrysy kolizji obiektu na ziemi (x, z): dla modelu – obrys z jego kształtu przekształcony jak obiekt
+ * (kilka wielokątów, gdy model ma kilka części), a gdy obrysu nie ma (model niewczytany) – pudełko modelu;
+ * dla prostej bryły – jej kształt.
+ */
+export function objectFootprints(
+  schema: Schema,
+  t: ObjectTypeDef,
+  o: MapObject,
+  map: MapData,
+  bounds?: ModelBoundsProvider,
+  outline?: ModelOutlineProvider,
+): { polygons: Pt[][]; source: CollisionSource } {
+  const model = objectModel(schema, o, t, map);
+  if (model) {
+    const m = modelOutline(map, model.ref, schema.player.height, outline);
+    if (m) return { polygons: outlineToWorld(m.outline, model.transform, o).filter((p) => p.length >= 3), source: m.source };
+    return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'bounds' };
+  }
+  return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'shape' };
+}
+
 /** Wszystkie kształty kolizji mapy: rysowane w edytorze i bryły/punkty z `flags.collision` (także dekoracje z kolizją). */
-export function collectCollision(schema: Schema, map: MapData, bounds?: ModelBoundsProvider): CollisionShape[] {
+export function collectCollision(schema: Schema, map: MapData, bounds?: ModelBoundsProvider, outline?: ModelOutlineProvider): CollisionShape[] {
   const out: CollisionShape[] = [];
   for (const o of map.objects) {
     const t = getType(schema, o.type);
@@ -147,7 +197,10 @@ export function collectCollision(schema: Schema, map: MapData, bounds?: ModelBou
     } else if (t.kind === 'path') {
       const width = typeof o.props.width === 'number' && o.props.width > 0 ? o.props.width : 1;
       if (xz.length >= 2) out.push({ objectId: o.id, type: o.type, shape: 'line', points: xz, width });
-    } else out.push({ objectId: o.id, type: o.type, shape: 'polygon', points: solidFootprint(t, o, bounds, schema, map) });
+    } else {
+      const fp = objectFootprints(schema, t, o, map, bounds, outline);
+      for (const points of fp.polygons) out.push({ objectId: o.id, type: o.type, shape: 'polygon', points, source: fp.source });
+    }
   }
   return out;
 }

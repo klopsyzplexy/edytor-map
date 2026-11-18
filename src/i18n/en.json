@@ -434,7 +434,7 @@
   "lib.search": "Search (name, folder, role)…",
   "lib.import": "Import models…",
   "lib.examples": "Example models",
-  "lib.examplesHint": "Loads the example models from the repository (footbridge, animated character, barrel, crate)",
+  "lib.examplesHint": "Loads the example models from the repository (footbridge, animated character, barrel, crate, rocks, fence, tree)",
   "lib.examplesFolder": "Examples",
   "lib.empty": "The library is empty. Import models (.glb, .gltf, .fbx, .obj, .zip) or drop files onto the window.",
   "lib.noMatch": "Nothing matches the search.",

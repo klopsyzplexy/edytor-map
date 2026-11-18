@@ -5,7 +5,7 @@
 //   właściwością `target`. Obiekt docelowy, który sam jest przejściem, nie odsyła postaci z powrotem: przejście
 //   działa ponownie dopiero, gdy postać z niego wyjdzie;
 // - strefa z komunikatem (`behavior.type = "message"`): wejście i wyjście pokazuje tekst z właściwości `text`.
-import { distToSegment, pointInPolygon, solidFootprint, type ModelBoundsProvider } from './collision';
+import { convexHull, distToSegment, objectFootprints, pointInPolygon, solidFootprint, type ModelBoundsProvider, type ModelOutlineProvider } from './collision';
 import { objectCenter, type MapData, type MapObject, type Vec3 } from './map';
 import { round } from './math';
 import { getType, type Schema } from './schema';
@@ -22,7 +22,7 @@ export interface Trigger {
 }
 
 /** Wszystkie przejścia i strefy z komunikatem w mapie. */
-export function buildTriggers(schema: Schema, map: MapData, bounds?: ModelBoundsProvider): Trigger[] {
+export function buildTriggers(schema: Schema, map: MapData, bounds?: ModelBoundsProvider, outline?: ModelOutlineProvider): Trigger[] {
   const out: Trigger[] = [];
   for (const o of map.objects) {
     const t = getType(schema, o.type);
@@ -31,7 +31,11 @@ export function buildTriggers(schema: Schema, map: MapData, bounds?: ModelBounds
     let shape: Array<[number, number]>;
     if (t.kind === 'zone') shape = o.points.map((p) => [round(p[0]), round(p[2])]);
     else if (t.kind === 'path') continue;
-    else shape = solidFootprint(t, o, bounds, schema, map);
+    else {
+      // obrys z kształtu modelu (wszystkie części razem – otoczka) albo kształt bryły
+      const fp = objectFootprints(schema, t, o, map, bounds, outline).polygons;
+      shape = fp.length === 1 ? fp[0] : fp.length ? convexHull(fp.flat()) : solidFootprint(t, o, bounds, schema, map);
+    }
     if (shape.length < 3) continue;
     if (b.type === 'teleport') {
       const v = o.props[b.target];

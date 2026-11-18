@@ -82,10 +82,10 @@ export class PlayMode {
     const { doc, viewport, models } = this.ctx;
     const schema = doc.schema;
     const map = doc.map;
-    this.shapes = collectCollision(schema, map, (ref) => models.bounds(ref));
+    this.shapes = collectCollision(schema, map, (ref) => models.bounds(ref), models.outlineProvider);
     this.world = buildPlayWorld(schema, map, { collision: this.shapes, walkable: collectWalkable(schema, map, (ref) => models.walkableTriangles(ref)) });
     this.state = spawnAt(this.world, at[0], at[2], Number.isFinite(at[1]) ? at[1] + 0.05 : Infinity);
-    this.triggers = buildTriggers(schema, map, (ref) => models.bounds(ref));
+    this.triggers = buildTriggers(schema, map, (ref) => models.bounds(ref), models.outlineProvider);
     this.trig = new TriggerState(this.triggers, map);
     this.fade = null;
     this.notice = null;
@@ -475,6 +475,24 @@ export class PlayMode {
           push(dashed, color, follow(off, false));
         }
       }
+    }
+    // wypełnienie obrysów obiektów (cienkie obrysy, np. płotu, są wtedy widoczne mimo modelu)
+    const fill: number[] = [];
+    for (const s of this.shapes) {
+      if (s.shape !== 'polygon' || s.type === COLLISION_ZONE || s.points.length < 3) continue;
+      const tris = THREE.ShapeUtils.triangulateShape(s.points.map(([x, z]) => new THREE.Vector2(x, z)), []);
+      for (const tri of tris)
+        for (const k of tri) {
+          const [x, z] = s.points[k];
+          fill.push(x, heightAt(map, x, z) + lift, z);
+        }
+    }
+    if (fill.length) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(fill, 3));
+      const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: OVERLAY_COLORS.object, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthTest: false, depthWrite: false }));
+      mesh.renderOrder = 7;
+      this.overlayGroup.add(mesh);
     }
     for (const [maps, dash] of [[solid, false], [dashed, true]] as const)
       for (const [color, pos] of maps) {

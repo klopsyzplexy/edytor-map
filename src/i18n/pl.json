@@ -434,7 +434,7 @@
   "lib.search": "Szukaj (nazwa, folder, rola)…",
   "lib.import": "Wgraj modele…",
   "lib.examples": "Przykładowe modele",
-  "lib.examplesHint": "Wczytuje przykładowe modele z repozytorium (kładka, postać z animacjami, beczka, skrzynia)",
+  "lib.examplesHint": "Wczytuje przykładowe modele z repozytorium (kładka, postać z animacjami, beczka, skrzynia, skały, płot, drzewo)",
   "lib.examplesFolder": "Przykłady",
   "lib.empty": "Biblioteka jest pusta. Wgraj modele (.glb, .gltf, .fbx, .obj, .zip) albo upuść pliki na okno.",
   "lib.noMatch": "Nic nie pasuje do wyszukiwania.",

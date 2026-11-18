@@ -183,7 +183,7 @@ export class App implements Ctx {
   private init(schema: Schema, map: MapData, schemaRaw: unknown): void {
     if (!this.doc) {
       this.doc = new EditorDoc(schema, map, schemaRaw);
-      this.doc.modelDefaults = (ref) => this.models.baseScaleOf(ref);
+      this.doc.modelDefaults = (ref) => ({ baseScale: this.models.baseScaleOf(ref), collision: this.models.collisionOf(ref) });
       this.objects = new ObjectsView(this.doc, this.models);
       this.viewport.root.add(this.objects.group);
       this.tools = { select: new SelectTool(this), sculpt: new SculptTool(this), paint: new PaintTool(this), place: new PlaceTool(this), stamp: new StampTool(this), lasso: new LassoTool(this) };
@@ -866,7 +866,7 @@ export class App implements Ctx {
 
   /** Przykładowe modele z repozytorium (leżą obok edytora w katalogu modele/). */
   private async loadExampleModels(): Promise<void> {
-    const names = ['kladka.glb', 'postac.glb', 'beczka.glb', 'skrzynia.glb'];
+    const names = ['kladka.glb', 'postac.glb', 'beczka.glb', 'skrzynia.glb', 'skaly.glb', 'plot.glb', 'drzewo.glb'];
     let n = 0;
     for (const name of names) {
       try {
@@ -1036,7 +1036,7 @@ export class App implements Ctx {
   private derived(): MapDerived {
     const m = this.doc.map;
     const walkable = collectWalkable(this.doc.schema, m, (ref) => this.models.walkableTriangles(ref));
-    const collision = collectCollision(this.doc.schema, m, (ref) => this.models.bounds(ref));
+    const collision = collectCollision(this.doc.schema, m, (ref) => this.models.bounds(ref), this.models.outlineProvider);
     const blocked = computeBlockedMask(this.doc.schema, m, collision);
     const models = usedModels(this.doc.schema, m.objects);
     return { ...(blocked ? { blocked } : {}), ...(walkable.length ? { walkable } : {}), ...(collision.length ? { collision } : {}), ...(models.length ? { models } : {}) };

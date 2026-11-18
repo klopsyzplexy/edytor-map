@@ -3,15 +3,18 @@ import { decodeF32, decodeU8, encodeF32, encodeU8 } from './binary';
 import type { MapData, MapGroup, MapObject, ModelSettings, Vec3 } from './map';
 import type { PropValue } from './schema';
 import type { CollisionShape } from './collision';
+import { cloneModelCollision, parseModelCollision } from './modelCollision';
 import type { WalkableSurface } from './walkable';
 
 export const FORMAT_ID = 'edytor-map';
 /**
  * Historia: 1 – pierwsza wersja (0.1.0); 2 – grupy z podgrupami (`parent`), `derived.collision` (0.2.0);
  * 3 – własny model obiektu (`objects[].model`), dekoracje `@decoration`, `derived.models` (0.3.0);
- * 4 – ustawienia modeli `models` (skala bazowa; `objects[].scale` to mnożnik obiektu) (0.4.0).
+ * 4 – ustawienia modeli `models` (skala bazowa; `objects[].scale` to mnożnik obiektu) (0.4.0);
+ * 5 – obrys kolizji modelu `models[].collision`; w `derived.collision` obrysy obiektów z kształtu modelu
+ *     (wielokąty mogą być wklęsłe, kilka na obiekt) z polem `source` (0.5.0).
  */
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 
 /** Dane wyliczane przy eksporcie dla gry; przy wczytywaniu są pomijane (edytor liczy je od nowa). */
 export interface MapDerived {
@@ -74,7 +77,7 @@ export function serializeMap(map: MapData, derived?: MapDerived, editorVersion?:
       if (!o.model) delete out.model;
       return out;
     }),
-    models: Object.fromEntries(Object.entries(map.models).map(([k, v]) => [k, { ...v }])),
+    models: Object.fromEntries(Object.entries(map.models).map(([k, v]) => [k, { ...v, ...(v.collision ? { collision: cloneModelCollision(v.collision) } : {}) }])),
   };
   if (derived && (derived.blocked || derived.walkable || derived.collision || derived.models)) {
     file.derived = {};
@@ -102,6 +105,9 @@ const MIGRATIONS: Record<number, (f: Obj) => Obj> = {
   2: (f) => ({ ...f, formatVersion: 3 }),
   // 3 → 4: nowa sekcja `models` (skala bazowa modeli = 1, więc mapa wygląda tak samo; `scale` obiektu = mnożnik)
   3: (f) => ({ ...f, formatVersion: 4, models: {} }),
+  // 4 → 5: nowe, opcjonalne pole `models[].collision` (brak = obrys liczony z kształtu modelu); `derived` i tak
+  // jest liczone od nowa, więc dane się nie zmieniają
+  4: (f) => ({ ...f, formatVersion: 5 }),
 };
 
 export function parseMap(text: string): MapData {
@@ -195,7 +201,8 @@ export function deserializeMap(raw: unknown): MapData {
   for (const [ref, m] of Object.entries(isObj(f.models) ? f.models : {})) {
     const bs = isObj(m) ? m.baseScale : undefined;
     if (typeof bs !== 'number' || !(bs > 0) || !Number.isFinite(bs)) throw new MapFormatError(`models["${ref}"].baseScale musi być liczbą dodatnią.`);
-    models[ref] = { baseScale: bs };
+    const collision = isObj(m) ? parseModelCollision(m.collision) : null;
+    models[ref] = { baseScale: bs, ...(collision ? { collision } : {}) };
   }
 
   return {

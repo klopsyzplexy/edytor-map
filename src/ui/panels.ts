@@ -5,7 +5,7 @@ import { BUILTIN_TYPES, COLLISION_LINE, DECORATION, simplify, smoothPoints } fro
 import { isBuiltinType } from '../core/builtinTypes';
 import { fileStem } from '../core/modelFiles';
 import { changeableTypes, modelRef, objectFlags, objectModel, objectSize, sameModel } from '../core/objectModel';
-import { cellSize, heightAt, modelBaseScale } from '../core/map';
+import { cellSize, heightAt, modelBaseScale, modelKey } from '../core/map';
 import { getType, locText, type ObjectTypeDef, type PropDef, type PropValue, type Schema } from '../core/schema';
 import { BRUSH_SHAPES, type HeightTool } from '../core/terrain';
 import { openBinaryFiles } from '../storage/files';
@@ -36,6 +36,8 @@ export interface Actions {
   editTypeModel(typeId: string): void;
   /** Skala bazowa modelu (wszystkie kopie na mapie i domyślna w bibliotece). */
   setBaseScale(ref: string, baseScale: number): void;
+  /** Okno „Obrys kolizji” modelu. */
+  editCollision(ref: string): void;
 }
 
 const L = (x: Parameters<typeof locText>[0], fb = '') => locText(x, getLang(), fb);
@@ -830,6 +832,19 @@ function typeAndModel(ctx: Ctx, sel: MapObject[], ty: ObjectTypeDef, actions: Ac
         numInput(Math.round(base * 1e4) / 1e4, 'baseScale', (v) => v > 0 && actions.setBaseScale(om.ref, v), { min: 0.0001, step: 0.01 }),
       ),
     );
+    // obrys kolizji modelu (też wspólny dla wszystkich kopii)
+    if (objectFlags(ty, o).collision) {
+      const c = ctx.doc.map.models[modelKey(ctx.doc.map, om.ref) ?? '']?.collision;
+      const text = c?.polygons?.length ? t(c.source === 'drawn' ? 'props.collisionDrawn' : 'props.collisionEdited') : t('props.collisionModel');
+      box.append(
+        h(
+          'div',
+          { class: 'model-row' },
+          h('span', { class: 'muted small grow', title: text }, text),
+          h('button', { title: t('props.collisionHint'), onclick: () => actions.editCollision(om.ref) }, t('props.collisionBtn')),
+        ),
+      );
+    }
   }
   if (om && ctx.models.state(om.ref) === 'error') box.append(h('p', { class: 'issue-inline warning' }, t('props.modelMissing', { model: fileStem(om.ref) })));
   return box;

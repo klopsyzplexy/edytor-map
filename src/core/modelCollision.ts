@@ -390,3 +390,57 @@ export function parseModelCollision(v: unknown): ModelCollision | null {
 export function cloneModelCollision(c: ModelCollision): ModelCollision {
   return { ...c, ...(c.polygons ? { polygons: c.polygons.map((p) => p.map((q) => [...q] as Pt)) } : {}) };
 }
+
+// ---------- ręczna poprawka obrysu (okno „Obrys kolizji”) ----------
+
+export interface VertexRef {
+  poly: number;
+  idx: number;
+}
+
+/** Najbliższy wierzchołek obrysu w odległości ≤ maxD (null – brak). */
+export function nearestVertex(o: Outline, p: Pt, maxD: number): VertexRef | null {
+  let best: VertexRef | null = null;
+  let bd = maxD;
+  o.forEach((poly, pi) =>
+    poly.forEach((q, i) => {
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d <= bd) {
+        bd = d;
+        best = { poly: pi, idx: i };
+      }
+    }),
+  );
+  return best;
+}
+
+/** Najbliższa krawędź obrysu w odległości ≤ maxD: krawędź od wierzchołka `idx` do następnego. */
+export function nearestEdge(o: Outline, p: Pt, maxD: number): VertexRef | null {
+  let best: VertexRef | null = null;
+  let bd = maxD;
+  o.forEach((poly, pi) =>
+    poly.forEach((a, i) => {
+      const d = segDist(p, a, poly[(i + 1) % poly.length]);
+      if (d <= bd) {
+        bd = d;
+        best = { poly: pi, idx: i };
+      }
+    }),
+  );
+  return best;
+}
+
+/** Nowy wierzchołek `pt` na krawędzi za wierzchołkiem `at.idx`. */
+export function insertVertex(o: Outline, at: VertexRef, pt: Pt): Outline {
+  return o.map((poly, pi) => (pi === at.poly ? [...poly.slice(0, at.idx + 1), [pt[0], pt[1]] as Pt, ...poly.slice(at.idx + 1)] : poly));
+}
+
+/** Usuwa wierzchołek; wielokąt z mniej niż trzema wierzchołkami znika. */
+export function removeVertex(o: Outline, at: VertexRef): Outline {
+  return o.map((poly, pi) => (pi === at.poly ? poly.filter((_, i) => i !== at.idx) : poly)).filter((p) => p.length >= 3);
+}
+
+/** Liczba części i wierzchołków obrysu (do opisu w oknie). */
+export function outlineStats(o: Outline): { parts: number; vertices: number } {
+  return { parts: o.length, vertices: o.reduce((s, p) => s + p.length, 0) };
+}

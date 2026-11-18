@@ -253,3 +253,9 @@ input.short { width: 64px; }
 .tabs button { min-width: 0; padding: 8px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-row .type { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-list kbd:empty { display: none; }
+
+/* okno „Obrys kolizji” */
+.collision-canvas { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; cursor: crosshair; touch-action: none; }
+.collision-dialog .row-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 6px 0; min-width: 0; }
+.collision-dialog .row-inline label.check { margin: 0; gap: 4px; }
+.collision-dialog .row-inline .grow { flex: 1; min-width: 120px; }

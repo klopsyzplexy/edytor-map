@@ -20,6 +20,8 @@ export interface LibraryActions {
   setFolder(name: string): void;
   /** Skala bazowa / normalizacja do rozmiaru w metrach. */
   normalize(name: string): void;
+  /** Obrys kolizji modelu (szczegół, poprawka, własny kształt). */
+  collision(name: string): void;
   remove(name: string): void;
 }
 
@@ -116,6 +118,7 @@ function card(ctx: Ctx, thumbs: Thumbnails, name: string, actions: LibraryAction
       item(t('lib.place'), () => actions.place(name)),
       item(t('lib.useAs'), () => actions.useAs(name)),
       item(t('lib.normalize'), () => actions.normalize(name)),
+      item(t('lib.collision'), () => actions.collision(name)),
       item(t('lib.folder'), () => actions.setFolder(name)),
       h('hr'),
       item(t('lib.remove'), () => actions.remove(name), 'danger'),

@@ -257,3 +257,18 @@ describe('format 5: obrys kolizji w mapie', () => {
     expect(deserializeMap(f).models['modele/skaly.glb']).toEqual({ baseScale: 1 });
   });
 });
+
+describe('ręczna poprawka obrysu', () => {
+  it('wstawianie, przesuwanie i usuwanie wierzchołków', async () => {
+    const { insertVertex, nearestEdge, nearestVertex, removeVertex, outlineStats } = await import('../src/core/modelCollision');
+    let o: Outline = [[[0, 0], [2, 0], [2, 2], [0, 2]], [[5, 5], [6, 5], [5, 6]]];
+    expect(nearestVertex(o, [2.1, 1.9], 0.3)).toEqual({ poly: 0, idx: 2 });
+    expect(nearestVertex(o, [1, 1], 0.3)).toBeNull();
+    const e = nearestEdge(o, [1, -0.1], 0.3)!;
+    expect(e).toEqual({ poly: 0, idx: 0 });
+    o = insertVertex(o, e, [1, -0.5]);
+    expect(o[0]).toEqual([[0, 0], [2, 0 + 0], [2, 2], [0, 2]].flatMap((p, i) => (i === 0 ? [p, [1, -0.5]] : [p])));
+    o = removeVertex(o, { poly: 1, idx: 0 });
+    expect(outlineStats(o)).toEqual({ parts: 1, vertices: 5 });
+  });
+});

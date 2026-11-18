@@ -3,7 +3,7 @@ import exampleSchemaRaw from '../examples/schemat-przyklad.json';
 import type { Ctx, EditorState, ToolId, TransformMode } from './context';
 import { EditorDoc } from './core/doc';
 import { mapToJson, MapFormatError, parseMap, type MapDerived } from './core/format';
-import { cloneObject, createMap, heightAt, modelKey, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
+import { cloneObject, createMap, heightAt, modelBaseScale, modelKey, objectCenter, type MapData, type MapGroup, type MapObject, type Vec3 } from './core/map';
 import { locText, parseSchema, SchemaError, type ScaleCategory, type Schema } from './core/schema';
 import { guessCategory } from './core/scaleNormalize';
 import { RESIZE_WARN_POINTS, resizedResolution, resizeMap } from './core/resize';
@@ -40,6 +40,7 @@ import { alertBox, chooseBox, confirmBox, helpDialog, modelDialog, newMapDialog,
 import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
 import { formatMeters, formatNum } from './ui/units';
+import { collisionDialog } from './ui/collisionDialog';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
 type LeftTab = 'objects' | 'terrain' | 'list' | 'library';
@@ -770,6 +771,7 @@ export class App implements Ctx {
       this.doc.setModelBaseScale(ref, v);
       this.models.setBaseScale(ref, v);
     },
+    editCollision: (ref) => void this.editCollision(ref),
     toggleLocked: (ids) => {
       const objs = ids.map((id) => this.doc.getObject(id)).filter((o): o is MapObject => !!o);
       if (!objs.length) return;
@@ -849,6 +851,7 @@ export class App implements Ctx {
       else await this.editTypeModel(role, name);
     },
     normalize: (name: string) => void this.normalizeModels([name]),
+    collision: (name: string) => void this.editCollision(name),
     setFolder: async (name: string) => {
       const folders = [...new Set(this.models.folders.values())].sort();
       const v = await promptBox(t('lib.folderTitle', { name }), t('lib.folderLabel'), this.models.folders.get(name) ?? '', folders.length ? t('lib.folderExisting', { list: folders.join(', ') }) : t('lib.folderHint'));
@@ -1129,6 +1132,40 @@ export class App implements Ctx {
    * Normalizacja skali: mierzy modele i proponuje skalę bazową według kategorii. Wynik trafia do biblioteki
    * (domyślna skala nowych obiektów) i do mapy – dla modeli, których mapa już używa (jeden krok cofania).
    */
+  /**
+   * Okno „Obrys kolizji” modelu: poziom szczegółu, poprawka wierzchołków, własny kształt. Zmiana trafia do mapy
+   * (cofnij/ponów; gdy mapa zna model albo go używa) i do biblioteki jako domyślna dla innych map.
+   */
+  private async editCollision(nameOrRef: string): Promise<void> {
+    const name = `${fileStem(nameOrRef)}.glb`;
+    const key = modelKey(this.doc.map, nameOrRef);
+    const ref = key ?? (this.models.fileNames.includes(name) ? modelRef(name) : nameOrRef);
+    await this.models.measure(ref);
+    const tris = this.models.triangles(ref);
+    if (!tris || !tris.length) return alertBox(t('coll.title', { name: fileStem(name) }), t('coll.noGeometry'));
+    const used = usedModels(this.doc.schema, this.doc.map.objects).some((r) => fileStem(r) === fileStem(name));
+    const inMap = used || !!key;
+    const base = inMap ? modelBaseScale(this.doc.map, ref) : (this.models.baseScaleOf(name) ?? 1);
+    const pl = this.doc.schema.player;
+    const band = pl.height / base;
+    const [lo] = [tris.reduce((m, v, i) => (i % 3 === 1 ? Math.min(m, v) : m), Infinity)];
+    const current = inMap && key ? this.doc.map.models[key].collision : this.models.collisionOf(name);
+    const res = await collisionDialog({
+      name,
+      tris,
+      band: [lo, lo + band],
+      metersPerUnit: base / this.doc.schema.scale.unitsPerMeter,
+      playerRadius: pl.radius / base,
+      current,
+      auto: (detail) => this.models.collisionOutline(ref, detail, band) ?? [],
+    });
+    if (!res) return;
+    this.models.setCollision(name, res.collision);
+    if (inMap) this.doc.setModelCollision(ref, res.collision);
+    void this.autosave();
+    toast(t(inMap ? 'coll.saved' : 'coll.savedLibrary', { name: fileStem(name) }));
+  }
+
   private async normalizeModels(names: string[]): Promise<void> {
     const sc = this.doc.schema.scale;
     const rows: NormalizeRow[] = [];

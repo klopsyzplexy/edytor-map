@@ -2,6 +2,22 @@
 
 Wszystkie zmiany w edytorze map. Numeracja w fazie alfa: `0.MINOR.PATCH`. MINOR to kolejna aktualizacja z zadań PM, a PATCH to drobna poprawka między aktualizacjami. Numer wersji jest w jednym miejscu: pole `version` w `package.json`.
 
+## [0.5.1] – 2026-11-18
+
+Poprawki od testera: kolizje obiektów pochylonych z siatki 3D, siatki kolizji w modelu, podgląd kolizji w edytorze bez trybu gry. Zrzut: `docs/zrzuty/0.5.1/`.
+
+### Dodane
+- **Przycisk „Kolizje”** na pasku narzędzi (klawisz **C** w edytorze): pokazuje kolizje na mapie bez uruchamiania gry (F5) – obrysy obiektów, lasso i linie kolizji, strome zbocza i warstwy nieprzechodnie, powierzchnie chodliwe – z legendą i liczbą kształtów. Odświeża się po każdej zmianie mapy, modeli i schematu (na dużej mapie ok. 0,1 s).
+- **Siatki kolizji zapisane w modelu:** siatka albo węzeł o nazwie z `collision`, `collider`, `kolizja` albo z przedrostkiem `UCX_`, `UBX_`, `UCP_`, `USP_`, `col_` wyznacza obrys kolizji zamiast wyglądu modelu; edytor jej nie rysuje i nie bierze do powierzchni chodliwych. Przykład: `lampa.glb` z niewidoczną siatką `UCX_lampa` („Przykładowe modele”).
+- Testy: obiekty obrócone wokół X, Y i Z (każdy punkt modelu na wysokości postaci leży w obrysie), przewrócone drzewo, mnożnik skali w pionie, jedno liczenie obrysu dla obrotów wokół pionu, nazwy siatek kolizji, lampa z siatką kolizji (razem 132).
+
+### Naprawione
+- **Kolizje obiektów pochylonych** (obrót wokół osi X lub Z): obrys był liczony płasko w układzie modelu i potem obracany jak kształt 2D, więc przy pochyleniu nie pasował do modelu. Teraz obrys pochodzi z siatki 3D przekształconej dokładnie jak obiekt i przeciętej na wysokości postaci (np. przewrócone drzewo blokuje cały pień i koronę). Obiekty obrócone tylko wokół pionu – jak w 0.5.0 (ten sam wynik, liczony raz na model).
+- Mnożnik skali obiektu w pionie zmienia teraz pasmo przekroju (wcześniej liczyła się tylko skala bazowa).
+
+### Zmienione
+- Format mapy bez zmian (5): gra dalej dostaje płaskie obrysy w `derived.collision`, tylko dokładniejsze dla pochylonych obiektów. Opis w `docs/formaty.md` (3.3b, 3.7).
+
 ## [0.5.0] – 2026-11-18
 
 Kolizje z kształtu modelu (zadanie `docs/zadania/0.5/01-kolizje-z-modelu.md`, raport `docs/raporty/0.5.md`, zrzuty przed i po: `docs/zrzuty/0.5.0/`).

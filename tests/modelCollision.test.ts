@@ -4,7 +4,7 @@ import { collectCollision, DECORATION, distToSegment, modelOutline, pointInPolyg
 import { EditorDoc } from '../src/core/doc';
 import { deserializeMap, mapToJson, parseMap, serializeMap } from '../src/core/format';
 import { createMap, type MapObject, type Vec3 } from '../src/core/map';
-import { collisionBand, computeOutline, polygonArea, sliceBand, type Outline, type Pt } from '../src/core/modelCollision';
+import { collisionBand, computeOutline, OutlineCache, polygonArea, sliceBand, type Outline, type Pt } from '../src/core/modelCollision';
 import { modelToWorld, objectModel } from '../src/core/objectModel';
 import { buildTriggers } from '../src/core/triggers';
 import { glbTriangles } from './glb';
@@ -40,11 +40,7 @@ function bandSamples(tris: Float32Array, y0: number, y1: number): Pt[] {
 const area = (o: Outline) => o.reduce((s, p) => s + Math.abs(polygonArea(p)), 0);
 
 /** Dostawca obrysów z prawdziwych plików modeli (jak biblioteka w edytorze). */
-const fromFiles: ModelOutlineProvider = (ref, detail, band) => {
-  const tris = model(ref.replace(/^modele\//, '').replace(/\.glb$/, ''));
-  const [y0] = collisionBand(tris, band)!;
-  return computeOutline(tris, y0, y0 + band, detail);
-};
+const fromFiles: ModelOutlineProvider = new OutlineCache((ref) => model(ref.replace(/^modele\//, '').replace(/\.glb$/, '')));
 
 describe('obrys kolizji z kształtu modelu', () => {
   it('skały: dwa osobne wielokąty, przylegają do geometrii, dużo mniejsze niż pudełko', () => {
@@ -299,5 +295,96 @@ describe('tryb gry z obrysami modeli', () => {
     walk(b, [0, 1], 2);
     expect(b.pos[2]).toBeLessThan(20 - 0.4 + 0.01);
     expect(b.pos[2]).toBeGreaterThan(19);
+  });
+});
+
+describe('obiekty pochylone: obrys z siatki 3D przekształconej jak obiekt', () => {
+  const setup = () => {
+    const s = exampleSchema();
+    const map = createMap(s, { name: 'm', size: [64, 64], resolution: 65, height: 0 });
+    const doc = new EditorDoc(s, map);
+    const add = (name: string, rot: Vec3, scale: Vec3 = [1, 1, 1]) =>
+      doc.addObject(DECORATION, [32, 0, 32], undefined, (o) => {
+        o.model = `modele/${name}.glb`;
+        o.props.collision = true;
+        o.rotation = rot;
+        o.scale = scale;
+      });
+    return { s, map, doc, add };
+  };
+
+  /** Punkty siatki modelu po przekształceniu obiektu, w paśmie od najniższego punktu do wysokości postaci. */
+  function worldSamples(name: string, o: MapObject, s: ReturnType<typeof exampleSchema>, map: Parameters<typeof objectModel>[3]): Pt[] {
+    const m = objectModel(s, o, undefined, map)!;
+    const t = model(name);
+    const w = new Float32Array(t.length);
+    for (let i = 0; i < t.length; i += 3) w.set(modelToWorld([t[i], t[i + 1], t[i + 2]], m.transform, o), i);
+    const [y0, y1] = collisionBand(w, PLAYER_H)!;
+    return bandSamples(w, y0, y1);
+  }
+
+  for (const [name, rot] of [['plot', [35, 20, 60]], ['skaly', [0, 0, 25]], ['drzewo', [90, 0, 0]], ['plot', [-20, 140, 10]]] as Array<[string, Vec3]>)
+    it(`${name} obrócony o ${rot.join(', ')}: każdy punkt modelu na wysokości postaci leży w obrysie`, () => {
+      const { s, map, add } = setup();
+      const o = add(name, rot);
+      const shapes = collectCollision(s, map, undefined, fromFiles).filter((c) => c.objectId === o.id);
+      expect(shapes.length).toBeGreaterThan(0);
+      expect(shapes.every((c) => c.shape === 'polygon' && c.source === 'model')).toBe(true);
+      const world: Outline = shapes.map((c) => c.points);
+      for (const [x, z] of worldSamples(name, o, s, map)) expect(distTo(world, x, z)).toBeLessThan(0.12);
+    });
+
+  it('przewrócone drzewo blokuje cały pień i koronę (płaski rzut dawał tylko kółko pnia)', () => {
+    const { s, map, add } = setup();
+    // obrót o 90° wokół Z: pień leży wzdłuż −X
+    const o = add('drzewo', [0, 0, 90]);
+    const world: Outline = collectCollision(s, map, undefined, fromFiles).filter((c) => c.objectId === o.id).map((c) => c.points);
+    for (const x of [-0.5, -1.5, -2.5, -3.5]) expect(distTo(world, 32 + x, 32)).toBe(0);
+    expect(distTo(world, 33, 32)).toBeGreaterThan(0.3);
+  });
+
+  it('mnożnik skali w pionie zmienia pasmo: spłaszczone drzewo blokuje też koronę', () => {
+    const { s, map, add } = setup();
+    const a = add('drzewo', [0, 0, 0]);
+    const b = add('drzewo', [0, 0, 0], [1, 0.5, 1]);
+    const all = collectCollision(s, map, undefined, fromFiles);
+    const areaOf = (id: string) => area(all.filter((c) => c.objectId === id).map((c) => c.points));
+    expect(areaOf(a.id)).toBeLessThan(0.3);
+    expect(areaOf(b.id)).toBeGreaterThan(4);
+  });
+
+  it('obrót tylko wokół pionu korzysta z jednego obrysu modelu (pamięć)', () => {
+    const { s, map, add } = setup();
+    let calls = 0;
+    const cache = new OutlineCache((ref) => (calls++, model(ref.replace(/^modele\//, '').replace(/\.glb$/, ''))));
+    for (const deg of [0, 17, 90, 200]) add('skaly', [0, deg, 0]);
+    collectCollision(s, map, undefined, cache);
+    expect(calls).toBe(1);
+  });
+});
+
+describe('siatki kolizji zapisane w modelu', () => {
+  it('rozpoznaje nazwy siatek kolizji', async () => {
+    const { isCollisionMeshName } = await import('../src/core/modelCollision');
+    for (const n of ['collision', 'Lampa_Collision', 'UCX_lampa_01', 'UBX_box', 'col_pien', 'kolizja', 'Collider']) expect(isCollisionMeshName(n)).toBe(true);
+    for (const n of ['lampa', 'colorful', 'columna', 'walkable_top', undefined]) expect(isCollisionMeshName(n)).toBe(false);
+  });
+});
+
+describe('lampa z siatką kolizji UCX_lampa', () => {
+  it('obrys z samej siatki kolizji: kwadrat 0,5 × 0,5 zamiast okrągłej podstawy lampy', async () => {
+    const { isCollisionMeshName } = await import('../src/core/modelCollision');
+    const path = fileURLToPath(new URL('../examples/modele/lampa.glb', import.meta.url));
+    const col = glbTriangles(path, isCollisionMeshName);
+    expect(col.length).toBe(12 * 9);
+    const [y0, y1] = collisionBand(col, PLAYER_H)!;
+    const o = computeOutline(col, y0, y1, 1);
+    expect(o).toHaveLength(1);
+    expect(o[0]).toHaveLength(4);
+    for (const [x, z] of o[0]) expect(Math.max(Math.abs(x), Math.abs(z))).toBeLessThan(0.27);
+    // wygląd lampy ma okrągłą podstawę – inny obrys
+    const all = glbTriangles(path, (n) => !isCollisionMeshName(n));
+    const [a0, a1] = collisionBand(all, PLAYER_H)!;
+    expect(computeOutline(all, a0, a1, 1)[0].length).toBeGreaterThan(6);
   });
 });

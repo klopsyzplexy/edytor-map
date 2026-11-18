@@ -77,6 +77,8 @@
   "tb.gameViewHint": "Camera set up like in the game; hides editor-only objects",
   "tb.mannequin": "Mannequin",
   "tb.mannequinHint": "See-through character at player scale next to the cursor and the selected object – to judge proportions",
+  "tb.collisionView": "Collisions",
+  "tb.collisionViewHint": "Show collisions on the map without play mode: object outlines, collision lasso and lines, steep slopes and impassable layers, walkable surfaces. Updates with every change",
   "tb.language": "Language",
   "tb.help": "Help and keyboard shortcuts",
 
@@ -321,6 +323,7 @@
   "sc.snap": "Grid and snapping",
   "sc.gameView": "Toggle the “game view”",
   "sc.mannequin": "Character mannequin (proportions)",
+  "sc.collisionView": "Collision preview in the editor (no F5)",
   "sc.save": "Save (with Shift – save as)",
   "sc.open": "Open map",
   "sc.help": "Shortcut cheat sheet (this window)",
@@ -513,6 +516,7 @@
   "props.modelMissing": "Model {model} is neither in the library nor next to the editor – a placeholder is shown.",
 
   "coll.title": "Collision outline – {name}",
+  "coll.viewTitle": "Collisions ({n})",
   "coll.intro": "Top view. Grey – the model's cross-section from its base up to the player's height (only this part blocks movement), pale grey – the rest of the model, purple – the collision outline, blue circle – the player. The outline rotates and scales with the object.",
   "coll.mode.model": "From the model's shape",
   "coll.mode.edited": "Edited by hand",

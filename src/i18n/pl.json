@@ -77,6 +77,8 @@
   "tb.gameViewHint": "Kamera ustawiona tak jak w grze; ukrywa obiekty widoczne tylko w edytorze",
   "tb.mannequin": "Manekin",
   "tb.mannequinHint": "Półprzezroczysta postać w skali gracza przy kursorze i obok zaznaczonego obiektu – do oceny proporcji",
+  "tb.collisionView": "Kolizje",
+  "tb.collisionViewHint": "Pokaż kolizje na mapie bez trybu gry: obrysy obiektów, lasso i linie kolizji, strome zbocza i warstwy nieprzechodnie, powierzchnie chodliwe. Odświeża się przy każdej zmianie",
   "tb.language": "Język",
   "tb.help": "Pomoc i skróty klawiszowe",
 
@@ -321,6 +323,7 @@
   "sc.snap": "Siatka i przyciąganie",
   "sc.gameView": "Przełącz „widok jak w grze”",
   "sc.mannequin": "Manekin postaci (proporcje)",
+  "sc.collisionView": "Podgląd kolizji w edytorze (bez F5)",
   "sc.save": "Zapisz (z Shift – zapisz jako)",
   "sc.open": "Otwórz mapę",
   "sc.help": "Ściąga skrótów (to okno)",
@@ -513,6 +516,7 @@
   "props.modelMissing": "Modelu {model} nie ma w bibliotece ani obok edytora – widać zastępczą bryłę.",
 
   "coll.title": "Obrys kolizji – {name}",
+  "coll.viewTitle": "Kolizje ({n})",
   "coll.intro": "Widok z góry. Szare – przekrój modelu od podstawy do wysokości postaci (tylko ta część blokuje ruch), bladoszare – reszta modelu, fioletowe – obrys kolizji, niebieskie kółko – postać. Obrys obraca się i skaluje razem z obiektem.",
   "coll.mode.model": "Z kształtu modelu",
   "coll.mode.edited": "Poprawiony ręcznie",

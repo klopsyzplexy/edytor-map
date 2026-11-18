@@ -6,7 +6,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import type { Vec3 } from '../core/map';
 import { fileStem, modelFormat } from '../core/modelFiles';
 import type { Box3 } from '../core/objectModel';
-import { cloneModelCollision, collisionBand, computeOutline, parseModelCollision, type ModelCollision, type Outline } from '../core/modelCollision';
+import { cloneModelCollision, isCollisionMeshName, OutlineCache, parseModelCollision, type ModelCollision, type Outline } from '../core/modelCollision';
 import { importModelFromUrl } from './modelImport';
 
 export type ModelState = 'loading' | 'ready' | 'error';
@@ -26,9 +26,9 @@ export class ModelLibrary {
   readonly categories = new Map<string, string>();
   /** Domyślny obrys kolizji modelu w bibliotece (klucz: nazwa.glb) – dla map, które modelu jeszcze nie znają. */
   readonly collisions = new Map<string, ModelCollision>();
-  /** Wyliczone obrysy kolizji (klucz: odwołanie|szczegół|pasmo) i trójkąty modeli. */
-  private outlines = new Map<string, Outline>();
+  /** Trójkąty kolizji modeli (siatki kolizji albo cały model) i wyliczone obrysy kolizji. */
   private tris = new Map<string, Float32Array>();
+  readonly outlines = new OutlineCache((ref) => this.triangles(ref));
   /** Licznik zmian pliku modelu (miniatury odświeżają się po podmianie). */
   readonly versions = new Map<string, number>();
   onChange: () => void = () => {};
@@ -97,15 +97,15 @@ export class ModelLibrary {
     return c ? cloneModelCollision(c) : undefined;
   }
 
-  /** Dostawca obrysów dla core/collision (collectCollision, buildTriggers). */
-  readonly outlineProvider = (ref: string, detail: number, band: number): Outline | null => this.collisionOutline(ref, detail, band);
-
   private forgetGeometry(stem: string): void {
     for (const k of [...this.tris.keys()]) if (fileStem(k) === stem) this.tris.delete(k);
-    for (const k of [...this.outlines.keys()]) if (fileStem(k.split('|')[0]) === stem) this.outlines.delete(k);
+    this.outlines.forget((ref) => fileStem(ref) === stem);
   }
 
-  /** Wszystkie trójkąty modelu w jego własnym układzie (x, y, z × 3) albo null, dopóki się nie wczyta. */
+  /**
+   * Trójkąty kolizji modelu w jego własnym układzie (x, y, z × 3) albo null, dopóki się nie wczyta: siatki
+   * kolizji zapisane w modelu (np. „collision”, „UCX_…”), a gdy ich nie ma – wszystkie siatki modelu.
+   */
   triangles(ref: string): Float32Array | null {
     const hit = this.tris.get(ref);
     if (hit) return hit;
@@ -117,9 +117,12 @@ export class ModelLibrary {
     scene.updateMatrixWorld(true);
     const out: number[] = [];
     const v = new THREE.Vector3();
+    const meshes: THREE.Mesh[] = [];
     scene.traverse((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
+      if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
+    });
+    const own = meshes.filter(isCollisionMesh);
+    for (const m of own.length ? own : meshes) {
       const pos = m.geometry.getAttribute('position');
       const index = m.geometry.getIndex();
       const count = index ? index.count : pos.count;
@@ -128,7 +131,7 @@ export class ModelLibrary {
           v.fromBufferAttribute(pos, index ? index.getX(k + c) : k + c).applyMatrix4(m.matrixWorld);
           out.push(v.x, v.y, v.z);
         }
-    });
+    }
     const tris = new Float32Array(out);
     this.tris.set(ref, tris);
     return tris;
@@ -139,15 +142,14 @@ export class ModelLibrary {
    * z poziomem szczegółu `detail`. Liczony raz i pamiętany. Null, dopóki model się nie wczyta.
    */
   collisionOutline(ref: string, detail: number, band: number): Outline | null {
-    const key = `${ref}|${detail.toFixed(3)}|${band.toFixed(4)}`;
-    const hit = this.outlines.get(key);
-    if (hit) return hit;
-    const tris = this.triangles(ref);
-    if (!tris) return null;
-    const b = collisionBand(tris, band);
-    const o = b ? computeOutline(tris, b[0], b[1], detail) : [];
-    this.outlines.set(key, o);
-    return o;
+    return this.outlines.upright(ref, detail, band);
+  }
+
+  /** Czy model ma własne siatki kolizji (wtedy obrys pochodzi tylko z nich). */
+  hasCollisionMeshes(ref: string): boolean {
+    let found = false;
+    this.cache.get(ref)?.scene?.traverse((o) => (found ||= (o as THREE.Mesh).isMesh && isCollisionMesh(o as THREE.Mesh)));
+    return found;
   }
 
   /** Foldery, skale bazowe i kategorie biblioteki do zapisu (plik biblioteka.json w projekcie i zapis roboczy). */
@@ -203,6 +205,10 @@ export class ModelLibrary {
       this.cache.set(ref, { state: 'loading' });
       this.load(ref).then(
         ({ scene, animations }) => {
+          // siatki kolizji zapisane w modelu nie są częścią wyglądu
+          scene.traverse((o) => {
+            if ((o as THREE.Mesh).isMesh && isCollisionMesh(o as THREE.Mesh)) o.visible = false;
+          });
           this.cache.set(ref, { state: 'ready', scene, animations });
           this.onChange();
         },
@@ -258,14 +264,15 @@ export class ModelLibrary {
     scene.traverse((o) => {
       if ((o as THREE.Mesh).isMesh) meshes.push(o as THREE.Mesh);
     });
-    const named = meshes.filter((m) => /walkable/i.test(m.name) || /walkable/i.test(m.parent?.name ?? ''));
+    const visual = meshes.filter((m) => !isCollisionMesh(m));
+    const named = visual.filter((m) => /walkable/i.test(m.name) || /walkable/i.test(m.parent?.name ?? ''));
     const useAll = named.length > 0;
     const out: number[] = [];
     const a = new THREE.Vector3();
     const b = new THREE.Vector3();
     const c = new THREE.Vector3();
     const n = new THREE.Vector3();
-    for (const m of useAll ? named : meshes) {
+    for (const m of useAll ? named : visual) {
       const g = m.geometry;
       const pos = g.getAttribute('position');
       const index = g.getIndex();
@@ -285,4 +292,9 @@ export class ModelLibrary {
     }
     return new Float32Array(out);
   }
+}
+
+/** Siatka kolizji zapisana w modelu (po nazwie siatki albo jej węzła). */
+function isCollisionMesh(m: THREE.Mesh): boolean {
+  return isCollisionMeshName(m.name) || isCollisionMeshName(m.parent?.name);
 }

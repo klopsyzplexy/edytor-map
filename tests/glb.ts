@@ -21,7 +21,8 @@ function mul(a: M4, b: M4): M4 {
   return o;
 }
 
-export function glbTriangles(path: string): Float32Array {
+/** `only` – tylko siatki, których nazwa węzła spełnia warunek (np. siatki kolizji). */
+export function glbTriangles(path: string, only?: (name: string) => boolean): Float32Array {
   const buf = readFileSync(path);
   const jsonLen = buf.readUInt32LE(12);
   const gltf = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
@@ -38,7 +39,7 @@ export function glbTriangles(path: string): Float32Array {
   const visit = (ni: number, parent: M4) => {
     const n = gltf.nodes[ni];
     const m = mul(parent, n.matrix ?? compose(n.translation, n.rotation, n.scale));
-    if (n.mesh !== undefined)
+    if (n.mesh !== undefined && (!only || only(n.name ?? '')))
       for (const p of gltf.meshes[n.mesh].primitives) {
         const pos = read(p.attributes.POSITION);
         const idx = p.indices !== undefined ? read(p.indices) : null;

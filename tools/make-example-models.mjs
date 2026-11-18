@@ -4,7 +4,8 @@
 //  - examples/modele/skrzynia.glb – skrzynia z górną ścianą „walkable_top” (można na niej stanąć),
 //  - examples/modele/skaly.glb – dwie nieregularne skały (dwie części, druga obrócona w węźle),
 //  - examples/modele/plot.glb – płot w kształcie litery L (słupki i żerdzie, obrys wklęsły),
-//  - examples/modele/drzewo.glb – drzewo: cienki pień, szeroka korona nad głową postaci.
+//  - examples/modele/drzewo.glb – drzewo: cienki pień, szeroka korona nad głową postaci,
+//  - examples/modele/lampa.glb – lampa z własną, niewidoczną siatką kolizji „UCX_lampa”.
 // Uruchomienie: node tools/make-example-models.mjs
 import { writeFileSync } from 'node:fs';
 
@@ -268,4 +269,16 @@ writeGlb('drzewo.glb', {
   ],
   nodes: [{ name: 'pien', mesh: 0 }, { name: 'korona', mesh: 1 }],
   roots: [0, 1],
+});
+
+// ---------- lampa z własną siatką kolizji (UCX_lampa – niewidoczna, edytor bierze z niej obrys) ----------
+const iron = [0.2, 0.22, 0.25, 1], glass = [1, 0.92, 0.6, 1], hidden = [1, 0, 1, 1];
+writeGlb('lampa.glb', {
+  parts: [
+    { name: 'lampa', color: iron, geo: merge(barrel(0.32, 0.25, 16, 1), barrel(0.07, 3, 10, 2), box(0.6, 2.95, 0, 1.2, 0.06, 0.06)) },
+    { name: 'klosz', color: glass, geo: box(1.1, 2.75, 0, 0.3, 0.35, 0.3) },
+    { name: 'UCX_lampa', color: hidden, geo: box(0, 1, 0, 0.5, 2, 0.5) },
+  ],
+  nodes: [{ name: 'lampa', mesh: 0 }, { name: 'klosz', mesh: 1 }, { name: 'UCX_lampa', mesh: 2 }],
+  roots: [0, 1, 2],
 });

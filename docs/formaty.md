@@ -409,7 +409,11 @@ Kolizja obiektu z modelem to **obrys z kształtu modelu**, a nie pudełko. Edyto
 3. rzutuje pasmo na płaszczyznę terenu, wypełnia dziury (wnętrze skały to też przeszkoda) i obrysowuje wynik,
 4. upraszcza obrys według poziomu szczegółu; prostszy obrys jest odrobinę większy, żeby nie wcinał się w model.
 
-Wynik to jeden albo kilka wielokątów (np. dwie skały w jednym modelu), mogą być wklęsłe (np. płot w kształcie litery L). Obrys przekształca się razem z obiektem tak samo jak punkty modelu (3.3a): ułożenie z typu, skala bazowa, mnożnik, obrót i położenie obiektu.
+Wynik to jeden albo kilka wielokątów (np. dwie skały w jednym modelu), mogą być wklęsłe (np. płot w kształcie litery L).
+
+Obrys obiektu liczy się z **siatki 3D modelu przekształconej tak jak obiekt** (3.3a: ułożenie z typu, skala bazowa, mnożnik, obrót), a dopiero potem przecina na wysokości postaci i rzutuje na teren (od 0.5.1). Dzięki temu obiekt pochylony albo przewrócony (obrót wokół osi X lub Z) blokuje dokładnie to, co leży na wysokości postaci, np. przewrócone drzewo – cały pień i koronę. Pasmo zawsze ma wysokość `player.height` w jednostkach mapy, więc liczy się też mnożnik skali w pionie. Gdy obiekt stoi prosto (obrót tylko wokół pionu), wynik jest ten sam co przy obrysie policzonym raz w układzie modelu i obróconym w płaszczyźnie – edytor korzysta wtedy z tej szybszej drogi.
+
+**Siatka kolizji w modelu** (od 0.5.1): gdy model `.glb` ma siatki, których nazwa (albo nazwa węzła) zawiera `collision`, `collider` albo `kolizja`, albo zaczyna się od `UCX_`, `UBX_`, `UCP_`, `USP_` (zwyczaj z Unreal Engine) lub `col_`, obrys liczy się **tylko z tych siatek**. Edytor ich nie rysuje i nie bierze ich do powierzchni chodliwych. Bez takich siatek obrys pochodzi z całego modelu. Przykład: `examples/modele/lampa.glb` z niewidocznym prostopadłościanem `UCX_lampa`.
 
 ```json
 "models": {
@@ -421,7 +425,7 @@ Wynik to jeden albo kilka wielokątów (np. dwie skały w jednym modelu), mogą 
 | Pole | Znaczenie |
 |---|---|
 | `detail` | poziom szczegółu 0–1 (0 – najprostszy obrys, 1 – najdokładniejszy); brak = 0,5 |
-| `polygons` | obrys poprawiony ręcznie albo narysowany w edytorze: lista wielokątów `[[x, z], …]` w **układzie pliku modelu** (przed skalą bazową); zastępuje obrys wyliczony |
+| `polygons` | obrys poprawiony ręcznie albo narysowany w edytorze: lista wielokątów `[[x, z], …]` w **układzie pliku modelu** (przed skalą bazową); zastępuje obrys wyliczony. To kształt płaski: przy obiekcie pochylonym jest rzutowany z poziomu podstawy modelu |
 | `source` | przy `polygons`: `edited` (poprawione wierzchołki obrysu) albo `drawn` (narysowany kształt) |
 
 Gra nie musi liczyć obrysów sama: gotowe obrysy obiektów w układzie mapy są w `derived.collision` (3.7). Biblioteka edytora pamięta ustawienia obrysu modelu (`biblioteka.json`) i nadaje je mapie, gdy model pojawia się w niej pierwszy raz.
@@ -468,7 +472,7 @@ Skąd się biorą kształty:
 - `@collision-zone` → `polygon` z punktami lassa;
 - `@collision-line` → `line` z grubością `props.width`;
 - obiekty typów z `flags.collision = true` i dekoracje z `props.collision = true`: strefa (`zone`) → `polygon`, ścieżka (`path`) → `line` (grubość z właściwości `width`, gdy typ ją ma, inaczej 1); punkt i bryła:
-  - z modelem (od formatu 5) → obrys z kształtu modelu (3.3b) po ułożeniu, skali i obrocie obiektu – jeden `polygon` na każdą część; model bez geometrii na wysokości postaci (np. sama korona) nie ma kolizji; gdy model nie był wczytany – pudełko modelu (`source: "bounds"`, a bez niego pudełko `defaultSize`);
+  - z modelem (od formatu 5) → obrys z kształtu modelu (3.3b): z siatki 3D przekształconej jak obiekt, przeciętej na wysokości postaci – jeden `polygon` na każdą część; model bez geometrii na wysokości postaci (np. sama korona) nie ma kolizji; gdy model nie był wczytany – pudełko modelu (`source: "bounds"`, a bez niego pudełko `defaultSize`);
   - prosta bryła → jej kształt widziany z góry po obrocie i skali (prostopadłościan – prostokąt, walec, kula, stożek – elipsa z 16 boków).
 
 Obrót obrysu jest taki sam jak obrót modelu w scenie (kąty Eulera XYZ, jak `THREE.Euler('XYZ')`): punkt `(x, z)` obrócony o kąt `a` wokół osi Y trafia do `(x·cos a + z·sin a, −x·sin a + z·cos a)`.

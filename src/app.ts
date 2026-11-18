@@ -7,7 +7,7 @@ import { cloneObject, createMap, heightAt, modelBaseScale, modelKey, objectCente
 import { locText, parseSchema, SchemaError, type ScaleCategory, type Schema } from './core/schema';
 import { guessCategory } from './core/scaleNormalize';
 import { RESIZE_WARN_POINTS, resizedResolution, resizeMap } from './core/resize';
-import { collectCollision, COLLISION_LINE, computeBlockedMask } from './core/collision';
+import { collectCollision, COLLISION_LINE, computeBlockedMask, terrainMask } from './core/collision';
 import { changeObjectType, modelRef, usedModels } from './core/objectModel';
 import { DECORATION } from './core/builtinTypes';
 import { createObject } from './core/map';
@@ -41,6 +41,8 @@ import { clear, debounce, h } from './ui/dom';
 import { KEY, tip, type KeyId } from './ui/shortcuts';
 import { formatMeters, formatNum } from './ui/units';
 import { collisionDialog } from './ui/collisionDialog';
+import { buildCollisionOverlay, clearOverlay, OVERLAY_COLORS } from './render/collisionOverlay';
+import { Group } from 'three';
 import { renderObjectList, renderPalette, renderProps, renderTerrainPanel, renderValidation, runValidation, type Actions, type ListState } from './ui/panels';
 
 type LeftTab = 'objects' | 'terrain' | 'list' | 'library';
@@ -84,6 +86,11 @@ export class App implements Ctx {
   private lastHit: { x: number; y: number; hit: Vec3 | null } | null = null;
   private savedAt: number | null = null;
   private gameView = false;
+  /** Podgląd kolizji w edytorze (przycisk „Kolizje”, klawisz C) – to samo, co nakładka w trybie gry. */
+  private collisionView = false;
+  private collisionGroup = new Group();
+  private collisionLegend = h('div', { class: 'collision-legend' });
+  private refreshCollisionView = debounce(() => this.updateCollisionView(), 200);
   private minimap: Minimap;
   /** Wciśnięte strzałki (przesuwanie kamery) i spacja (przesuwanie myszą). */
   private held = new Set<string>();
@@ -130,9 +137,11 @@ export class App implements Ctx {
     const libChanged = debounce(() => {
       if (this.leftTab === 'library' && this.doc) this.renderLeft();
     }, 120);
+    this.viewport.root.add(this.collisionGroup);
     this.models.onChange = () => {
       this.objects?.sync();
       libChanged();
+      if (this.collisionView) this.refreshCollisionView();
     };
     this.stamps.onChange = () => {
       if (this.doc) this.stateChanged();
@@ -199,6 +208,7 @@ export class App implements Ctx {
     const autosave = debounce(() => this.autosave(), 1500);
     d.on('map', () => this.onMapReplaced());
     d.on('objects', () => {
+      if (this.collisionView) this.refreshCollisionView();
       this.minimap.invalidate();
       this.objects.sync();
       this.gizmo.refresh();
@@ -215,8 +225,10 @@ export class App implements Ctx {
       const { rect, kind } = p as { rect: { i0: number; j0: number; i1: number; j1: number }; kind: 'heights' | 'layers' | 'all' };
       this.terrain.update(rect, kind);
       this.minimap.invalidate();
+      if (this.collisionView) this.refreshCollisionView();
     });
     d.on('settings', () => {
+      if (this.collisionView) this.refreshCollisionView();
       this.terrain.updateWaterLevel();
       this.terrain.setSlopeOverlay(this.state.slopeOverlay && this.doc.map.settings.slope.enabled);
       this.renderLeft();
@@ -228,6 +240,7 @@ export class App implements Ctx {
     });
     // zmiana schematu z interfejsu (model typu, model postaci): przerysuj obiekty i panele
     d.on('schema', () => {
+      if (this.collisionView) this.refreshCollisionView();
       this.objects.sync(true);
       this.renderAll();
       validate();
@@ -248,6 +261,7 @@ export class App implements Ctx {
     this.state.brush.radius = Math.max(1, Math.round(Math.max(w, dd) / 16));
     this.objects.sync(true);
     this.minimap.invalidate();
+    if (this.collisionView) this.refreshCollisionView();
     this.viewport.frameMap(this.doc.map.settings.size, heightAt(this.doc.map, w / 2, dd / 2));
     if (this.gameView) this.toggleGameView();
     this.setTool('select');
@@ -537,6 +551,9 @@ export class App implements Ctx {
           case 'm':
             this.toggleMannequin();
             return true;
+          case 'c':
+            this.toggleCollisionView();
+            return true;
           case 'f1':
           case '?':
             void helpDialog();
@@ -564,6 +581,38 @@ export class App implements Ctx {
     const n = map.objects.length;
     this.doc.resize(resizeMap(this.doc.schema, map, o));
     toast(t('toast.resized', { w: formatNum(o.width), d: formatNum(o.depth), n }));
+  }
+
+  /** C: podgląd kolizji w edytorze bez trybu gry (kształty, maska terenu, powierzchnie chodliwe). */
+  private toggleCollisionView(): void {
+    this.collisionView = !this.collisionView;
+    this.updateCollisionView();
+    this.renderToolbar();
+  }
+
+  private updateCollisionView(): void {
+    clearOverlay(this.collisionGroup);
+    if (this.play.active) return;
+    if (!this.collisionView) {
+      this.terrain.setBlockedOverlay(null);
+      this.collisionLegend.remove();
+      return;
+    }
+    const { schema, map } = this.doc;
+    const shapes = collectCollision(schema, map, (ref) => this.models.bounds(ref), this.models.outlines);
+    buildCollisionOverlay(this.collisionGroup, map, shapes, collectWalkable(schema, map, (ref) => this.models.walkableTriangles(ref)));
+    this.terrain.setBlockedOverlay(terrainMask(schema, map));
+    const sw = (c: string, label: string) => h('span', { class: 'legend' }, h('span', { class: 'swatch', style: `background:${c}` }), label);
+    clear(this.collisionLegend);
+    this.collisionLegend.append(
+      h('b', {}, t('coll.viewTitle', { n: shapes.length })),
+      sw(OVERLAY_COLORS.zone, t('play.lgZone')),
+      sw(OVERLAY_COLORS.line, t('play.lgLine')),
+      sw(OVERLAY_COLORS.object, t('play.lgObject')),
+      sw(OVERLAY_COLORS.mask, t('play.lgMask')),
+      sw(OVERLAY_COLORS.walkable, t('play.lgWalkable')),
+    );
+    if (!this.collisionLegend.isConnected) this.el.view.append(this.collisionLegend);
   }
 
   /** M: manekin postaci przy kursorze i obok zaznaczenia. */
@@ -629,6 +678,8 @@ export class App implements Ctx {
       this.gizmo.refresh();
       this.el.view.parentElement?.classList.add('playing');
     }
+    clearOverlay(this.collisionGroup);
+    this.collisionLegend.remove();
     this.play.start(at);
     this.renderToolbar();
     this.refreshHint();
@@ -636,6 +687,7 @@ export class App implements Ctx {
 
   private afterPlay(): void {
     this.el.view.parentElement?.classList.remove('playing');
+    if (this.collisionView) this.updateCollisionView();
     this.gizmo.enabled = true;
     this.gizmo.refresh();
     this.applyViewState();
@@ -869,7 +921,7 @@ export class App implements Ctx {
 
   /** Przykładowe modele z repozytorium (leżą obok edytora w katalogu modele/). */
   private async loadExampleModels(): Promise<void> {
-    const names = ['kladka.glb', 'postac.glb', 'beczka.glb', 'skrzynia.glb', 'skaly.glb', 'plot.glb', 'drzewo.glb'];
+    const names = ['kladka.glb', 'postac.glb', 'beczka.glb', 'skrzynia.glb', 'skaly.glb', 'plot.glb', 'drzewo.glb', 'lampa.glb'];
     let n = 0;
     for (const name of names) {
       try {
@@ -1039,7 +1091,7 @@ export class App implements Ctx {
   private derived(): MapDerived {
     const m = this.doc.map;
     const walkable = collectWalkable(this.doc.schema, m, (ref) => this.models.walkableTriangles(ref));
-    const collision = collectCollision(this.doc.schema, m, (ref) => this.models.bounds(ref), this.models.outlineProvider);
+    const collision = collectCollision(this.doc.schema, m, (ref) => this.models.bounds(ref), this.models.outlines);
     const blocked = computeBlockedMask(this.doc.schema, m, collision);
     const models = usedModels(this.doc.schema, m.objects);
     return { ...(blocked ? { blocked } : {}), ...(walkable.length ? { walkable } : {}), ...(collision.length ? { collision } : {}), ...(models.length ? { models } : {}) };
@@ -1349,6 +1401,7 @@ export class App implements Ctx {
       }),
       btn(t('tb.gameView'), t('tb.gameViewHint'), () => this.toggleGameView(), this.gameView, false, 'gameView'),
       btn(t('tb.mannequin'), t('tb.mannequinHint'), () => this.toggleMannequin(), this.mannequin.enabled, false, 'mannequin'),
+      btn(t('tb.collisionView'), t('tb.collisionViewHint'), () => this.toggleCollisionView(), this.collisionView, false, 'collisionView'),
       h('button', { class: 'play-btn', title: `${t('tb.playHint')} (${KEY.play}; ${KEY.playCursor} – ${t('tb.playCursor')})`, onclick: () => this.startPlay(false) }, t('tb.play')),
       h('span', { class: 'grow' }),
       h('span', { class: 'doc-title', title: this.fileName ?? '' }, title),

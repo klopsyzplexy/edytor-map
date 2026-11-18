@@ -444,3 +444,70 @@ export function removeVertex(o: Outline, at: VertexRef): Outline {
 export function outlineStats(o: Outline): { parts: number; vertices: number } {
   return { parts: o.length, vertices: o.reduce((s, p) => s + p.length, 0) };
 }
+
+// ---------- siatki kolizji w modelu i pamięć obrysów ----------
+
+/**
+ * Czy siatka (albo jej węzeł) jest siatką kolizji modelu, a nie wyglądem: nazwa z „collision”, „collider”,
+ * „kolizja” albo przedrostki UCX_/UBX_/UCP_/USP_ (zwyczaj z Unreal Engine) i col_.
+ */
+export function isCollisionMeshName(name: string | undefined): boolean {
+  return !!name && /collision|collider|kolizj|^u(cx|bx|cp|sp)_|^col_/i.test(name);
+}
+
+/** Pasmo w kluczu pamięci zaokrąglone do 1% (losowe mnożniki skali nie liczą obrysu dla każdej kopii osobno). */
+function bandKey(band: number): number {
+  return Math.exp(Math.round(Math.log(Math.max(band, 1e-6)) * 100) / 100);
+}
+
+/**
+ * Obrysy kolizji modeli liczone raz i pamiętane. `tris` daje trójkąty kolizji modelu (siatki kolizji, a bez
+ * nich – cały model) w układzie pliku modelu; null – model jeszcze niewczytany.
+ */
+export class OutlineCache {
+  private cache = new Map<string, Outline>();
+  constructor(private tris: (ref: string) => Float32Array | null) {}
+
+  /** Zapomina obrysy modelu (po podmianie pliku); bez argumentu – wszystkie. */
+  forget(match?: (ref: string) => boolean): void {
+    for (const k of [...this.cache.keys()]) if (!match || match(k.split('|')[1])) this.cache.delete(k);
+  }
+
+  /** Model stojący (oś Y modelu pionowo): obrys w układzie modelu, pasmo `band` (jednostki modelu) nad podstawą. */
+  upright(ref: string, detail: number, band: number): Outline | null {
+    const b = bandKey(band);
+    const key = `u|${ref}|${detail.toFixed(3)}|${b.toFixed(5)}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const tris = this.tris(ref);
+    if (!tris) return null;
+    const range = collisionBand(tris, b);
+    const o = range ? computeOutline(tris, range[0], range[1], detail) : [];
+    this.cache.set(key, o);
+    return o;
+  }
+
+  /**
+   * Model obrócony dowolnie (np. pochylony): trójkąty przekształcone `f` (do układu mapy bez przesunięcia
+   * obiektu, oś Y pionowo), przekrój w paśmie `height` nad najniższym punktem. Wynik w układzie mapy względem
+   * punktu obiektu. `key` opisuje przekształcenie (ten sam klucz – ten sam obrys).
+   */
+  transformed(ref: string, detail: number, key: string, f: (p: Vec3) => Vec3, height: number): Outline | null {
+    const k = `t|${ref}|${detail.toFixed(3)}|${height.toFixed(4)}|${key}`;
+    const hit = this.cache.get(k);
+    if (hit) return hit;
+    const tris = this.tris(ref);
+    if (!tris) return null;
+    const out = new Float32Array(tris.length);
+    for (let i = 0; i + 2 < tris.length; i += 3) {
+      const p = f([tris[i], tris[i + 1], tris[i + 2]]);
+      out[i] = p[0];
+      out[i + 1] = p[1];
+      out[i + 2] = p[2];
+    }
+    const range = collisionBand(out, height);
+    const o = range ? computeOutline(out, range[0], range[1], detail) : [];
+    this.cache.set(k, o);
+    return o;
+  }
+}

@@ -3,20 +3,19 @@
 // Czyste funkcje, bez DOM i Three.js.
 import { cellSize, modelBaseScale, modelKey, type MapData, type MapObject, type Vec3 } from './map';
 import { computeLayerMask, computeSlopeMask } from './terrain';
-import { localToWorld, round } from './math';
-import { modelToWorld, objectFlags, objectModel, type Box3 } from './objectModel';
-import { DEFAULT_DETAIL, outlineToWorld, type Outline, type Pt } from './modelCollision';
+import { localToWorld, rotateXYZ, round } from './math';
+import { modelToObject, modelToWorld, objectFlags, objectModel, type Box3 } from './objectModel';
+import { DEFAULT_DETAIL, outlineToWorld, type OutlineCache, type Outline, type Pt } from './modelCollision';
 import { getType, type ObjectTypeDef, type Schema } from './schema';
 
 /** Pudełko modelu w jego własnym układzie (null – model jeszcze niewczytany). */
 export type ModelBoundsProvider = (ref: string) => Box3 | null;
 
 /**
- * Obrys kolizji wyliczony z geometrii modelu (układ pliku modelu): `detail` – poziom szczegółu 0–1,
- * `band` – wysokość pasma przekroju nad podstawą modelu w jednostkach modelu. Null – model niewczytany;
- * pusta lista – w paśmie nie ma geometrii.
+ * Obrysy kolizji modeli (pamięć w core/modelCollision.ts – `OutlineCache`): `upright` – model stojący, obrys
+ * w układzie modelu; `transformed` – siatka 3D przekształcona jak obiekt (np. pochylony), obrys w układzie mapy.
  */
-export type ModelOutlineProvider = (ref: string, detail: number, band: number) => Outline | null;
+export type ModelOutlineProvider = Pick<OutlineCache, 'upright' | 'transformed'>;
 
 /** Skąd jest kształt kolizji obiektu (pole `source` w `derived.collision`). */
 export type CollisionSource = 'model' | 'edited' | 'drawn' | 'shape' | 'bounds';
@@ -159,14 +158,15 @@ export function modelOutline(
   const k = modelKey(map, ref);
   const c = k ? map.models[k].collision : undefined;
   if (c?.polygons?.length) return { outline: c.polygons, source: c.source ?? 'edited' };
-  const auto = outline?.(ref, c?.detail ?? DEFAULT_DETAIL, playerHeight / modelBaseScale(map, ref));
+  const auto = outline?.upright(ref, c?.detail ?? DEFAULT_DETAIL, playerHeight / modelBaseScale(map, ref));
   return auto ? { outline: auto, source: 'model' } : null;
 }
 
 /**
- * Obrysy kolizji obiektu na ziemi (x, z): dla modelu – obrys z jego kształtu przekształcony jak obiekt
- * (kilka wielokątów, gdy model ma kilka części), a gdy obrysu nie ma (model niewczytany) – pudełko modelu;
- * dla prostej bryły – jej kształt.
+ * Obrysy kolizji obiektu na ziemi (x, z). Dla modelu – z jego siatki 3D przekształconej jak obiekt (ułożenie
+ * z typu, skala bazowa, mnożnik, obrót) i przeciętej na wysokości postaci; kilka wielokątów, gdy model ma kilka
+ * części. Model stojący (obrót tylko wokół pionu) korzysta z obrysu liczonego raz w układzie modelu. Gdy obrysu
+ * nie ma (model niewczytany) – pudełko modelu; dla prostej bryły – jej kształt.
  */
 export function objectFootprints(
   schema: Schema,
@@ -177,12 +177,40 @@ export function objectFootprints(
   outline?: ModelOutlineProvider,
 ): { polygons: Pt[][]; source: CollisionSource } {
   const model = objectModel(schema, o, t, map);
-  if (model) {
-    const m = modelOutline(map, model.ref, schema.player.height, outline);
+  if (!model) return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'shape' };
+  const k = modelKey(map, model.ref);
+  const c = k ? map.models[k].collision : undefined;
+  const h = schema.player.height;
+  // część liniowa przekształcenia punktu modelu do mapy (bez położenia obiektu)
+  const lin = (p: Vec3): Vec3 => rotateXYZ([p[0] * o.scale[0], p[1] * o.scale[1], p[2] * o.scale[2]], o.rotation);
+  const f = (p: Vec3): Vec3 => lin(modelToObject(p, model.transform));
+  const f0 = f([0, 0, 0]);
+  const axis = (p: Vec3): Vec3 => {
+    const q = f(p);
+    return [q[0] - f0[0], q[1] - f0[1], q[2] - f0[2]];
+  };
+  const [ex, ey, ez] = [axis([1, 0, 0]), axis([0, 1, 0]), axis([0, 0, 1])];
+  const eps = 1e-6 * Math.max(1, Math.hypot(...ey));
+  // stojący: pion modelu zostaje pionem, a płaszczyzna (x, z) – płaszczyzną terenu
+  const upright = Math.abs(ex[1]) < eps && Math.abs(ez[1]) < eps && Math.abs(ey[0]) < eps && Math.abs(ey[2]) < eps && ey[1] > 0;
+  if (c?.polygons?.length || upright) {
+    const m = c?.polygons?.length
+      ? { outline: c.polygons, source: c.source ?? ('edited' as CollisionSource) }
+      : (() => {
+          const auto = outline?.upright(model.ref, c?.detail ?? DEFAULT_DETAIL, h / ey[1]);
+          return auto ? { outline: auto, source: 'model' as CollisionSource } : null;
+        })();
     if (m) return { polygons: outlineToWorld(m.outline, model.transform, o).filter((p) => p.length >= 3), source: m.source };
-    return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'bounds' };
+  } else if (outline) {
+    const key = [...ex, ...ey, ...ez, ...f0].map((v) => v.toFixed(4)).join(',');
+    const local = outline.transformed(model.ref, c?.detail ?? DEFAULT_DETAIL, key, f, h);
+    if (local)
+      return {
+        polygons: local.map((p) => p.map(([x, z]) => [round(x + o.position[0]), round(z + o.position[2])] as Pt)).filter((p) => p.length >= 3),
+        source: 'model',
+      };
   }
-  return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'shape' };
+  return { polygons: [solidFootprint(t, o, bounds, schema, map)], source: 'bounds' };
 }
 
 /** Wszystkie kształty kolizji mapy: rysowane w edytorze i bryły/punkty z `flags.collision` (także dekoracje z kolizją). */
@@ -253,4 +281,10 @@ export function computeBlockedMask(schema: Schema, map: MapData, shapes: Collisi
   let mask = map.settings.slope.enabled ? computeSlopeMask(map) : new Uint8Array(map.terrain.nx * map.terrain.nz);
   mask = computeLayerMask(map, layerIds, mask);
   return rasterizeCollision(map, shapes, mask);
+}
+
+/** Maska terenu dla podglądu kolizji: strome zbocza (gdy włączone w mapie) i warstwy nieprzechodnie. */
+export function terrainMask(schema: Schema, map: MapData): Uint8Array {
+  const mask = map.settings.slope.enabled ? computeSlopeMask(map) : new Uint8Array(map.terrain.nx * map.terrain.nz);
+  return computeLayerMask(map, schema.terrainLayers.filter((l) => !l.passable).map((l) => l.id), mask);
 }

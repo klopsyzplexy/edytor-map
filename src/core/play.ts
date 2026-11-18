@@ -2,10 +2,9 @@
 // Czyste funkcje, bez DOM i Three.js (testy w tests/play.test.ts). Postać to koło o promieniu `radius`
 // na ziemi i wysokości `height`. Edytor nie zna logiki gry: to tylko podgląd tego, co gra dostaje
 // w danych pochodnych mapy (kolizje, maska, powierzchnie chodliwe).
-import { pointInPolygon, type CollisionShape } from './collision';
+import { pointInPolygon, terrainMask, type CollisionShape } from './collision';
 import { cellSize, heightAt, type MapData, type Vec3 } from './map';
 import type { PlayerDef, Schema } from './schema';
-import { computeLayerMask, computeSlopeMask } from './terrain';
 import type { WalkableSurface } from './walkable';
 
 /** Rozmiar oczka siatki przestrzennej (jednostki mapy). */
@@ -71,8 +70,7 @@ export interface PlayInput {
 
 /** Przygotowuje świat do trybu gry: kolizje, maskę terenu i powierzchnie chodliwe w siatce przestrzennej. */
 export function buildPlayWorld(schema: Schema, map: MapData, input: PlayInput): PlayWorld {
-  let mask = map.settings.slope.enabled ? computeSlopeMask(map) : new Uint8Array(map.terrain.nx * map.terrain.nz);
-  mask = computeLayerMask(map, schema.terrainLayers.filter((l) => !l.passable).map((l) => l.id), mask);
+  const mask = terrainMask(schema, map);
   const segments = new Buckets<Segment>();
   const polygons: PlayWorld['polygons'] = [];
   const addSeg = (s: Segment) => segments.add(s, Math.min(s.ax, s.bx) - s.half, Math.min(s.az, s.bz) - s.half, Math.max(s.ax, s.bx) + s.half, Math.max(s.az, s.bz) + s.half);
